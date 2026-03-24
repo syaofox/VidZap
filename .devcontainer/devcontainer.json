@@ -22,7 +22,8 @@
     "PROJECT_NAME": "vidzap",
     "PYTHON_VERSION": "3.13",
     "UV_INIT_BARE": "false",
-    "INSTALL_IPYKERNEL": "false"
+    "INSTALL_IPYKERNEL": "false",
+    "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv"
   },
   "postCreateCommand": "make post-create",
   "mounts": []

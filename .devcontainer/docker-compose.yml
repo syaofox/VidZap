@@ -7,4 +7,5 @@ services:
     container_name: vidzap
     volumes:
       - ..:/vidzap:cached
+      - /home/syaofox/.agents:/home/vscode/.agents
     command: sleep infinity
