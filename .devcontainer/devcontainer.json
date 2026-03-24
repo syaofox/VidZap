@@ -2,7 +2,7 @@
   "name": "vidzap",
   "dockerComposeFile": "./docker-compose.yml",
   "service": "app",
-  "workspaceFolder": "/workspace",
+  "workspaceFolder": "/vidzap",
   "remoteUser": "vscode",
   "features": {
     "ghcr.io/devcontainers-extra/features/uv:1": {}

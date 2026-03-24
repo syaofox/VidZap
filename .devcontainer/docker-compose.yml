@@ -6,5 +6,5 @@ services:
     image: vidzap
     container_name: vidzap
     volumes:
-      - ..:/workspace:cached
+      - ..:/vidzap:cached
     command: sleep infinity
