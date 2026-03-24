@@ -4,6 +4,7 @@ from collections.abc import Callable
 from nicegui import background_tasks, ui
 
 from core.cookie_manager import get_cookie_for_url
+from core.version import get_app_version
 from core.ytdlp_handler import (
     check_ffmpeg,
     create_download_record,
@@ -21,7 +22,9 @@ def render() -> None:
     """渲染首页"""
     # 顶部导航
     with ui.header().classes("justify-between items-center"):
-        ui.label("NiceVid").classes("text-h4 text-white")
+        with ui.row().classes("items-baseline gap-1"):
+            ui.label("NiceVid").classes("text-h4 text-white")
+            ui.label(f"v{get_app_version()}").classes("text-caption text-white/60")
         with ui.row():
             ui.button("首页", on_click=lambda: ui.navigate.to("/")).props("flat color=white")
             ui.button("Cookie 设置", on_click=lambda: ui.navigate.to("/settings")).props(
