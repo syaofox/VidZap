@@ -1,0 +1,37 @@
+[project]
+name = "nicevid"
+version = "0.1.0"
+description = "纯 Python 视频下载工具（NiceGUI + yt-dlp）"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "nicegui==3.9.0",
+    "fastapi",
+    "uvicorn",
+    "yt-dlp",
+    "pydantic",
+    "python-multipart",
+]
+
+[project.optional-dependencies]
+dev = ["ruff", "mypy"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "ruff>=0.15.7",
+]
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false

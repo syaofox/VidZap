@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    image: vidzap
+    container_name: vidzap
+    volumes:
+      - ..:/workspace:cached
+    command: sleep infinity
