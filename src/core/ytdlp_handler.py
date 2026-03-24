@@ -28,12 +28,16 @@ async def extract_info(url: str, cookie_file: str | None = None) -> dict:
     opts: dict = {
         "quiet": True,
         "no_warnings": True,
+        "noplaylist": True,
     }
     if cookie_file:
         opts["cookiefile"] = cookie_file
 
     loop = asyncio.get_event_loop()
-    info = await loop.run_in_executor(None, lambda: _extract_sync(url, opts))
+    info = await asyncio.wait_for(
+        loop.run_in_executor(None, lambda: _extract_sync(url, opts)),
+        timeout=60,
+    )
     return info
 
 
