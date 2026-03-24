@@ -7,7 +7,9 @@ from core.cookie_manager import get_cookie_for_url
 from core.ytdlp_handler import (
     check_ffmpeg,
     create_download_record,
+    delete_download_record,
     extract_info,
+    find_existing_download,
     get_supported_sites,
     get_ytdlp_version,
     start_download,
@@ -513,6 +515,39 @@ def render() -> None:
                             sel = table_ref["table"].selected
                         else:
                             sel = list(selected_formats)
+
+                        # 检测历史记录中是否存在重复
+                        urls_to_check = analysis_result["urls"]
+                        duplicate_titles: list[str] = []
+                        for u in urls_to_check:
+                            existing = find_existing_download(u)
+                            if existing:
+                                duplicate_titles.append(existing.get("title") or u[:60])
+
+                        if duplicate_titles:
+                            with ui.dialog() as dialog, ui.card():
+                                ui.label("链接已存在于下载记录中").classes("text-h6")
+                                for t in duplicate_titles:
+                                    ui.label(f"  · {t}").classes("text-body2")
+                                with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                                    ui.button(
+                                        "放弃",
+                                        on_click=lambda: dialog.submit("cancel"),
+                                    ).props("flat")
+                                    ui.button(
+                                        "覆盖",
+                                        on_click=lambda: dialog.submit("overwrite"),
+                                    ).props("color=negative")
+                            choice = await dialog
+                            if choice != "overwrite":
+                                dl_btn_ref["btn"].enable()
+                                return
+                            # 覆盖：删除旧记录
+                            for u in urls_to_check:
+                                existing = find_existing_download(u)
+                                if existing:
+                                    delete_download_record(existing["id"])
+
                         dl_btn_ref["btn"].disable()
                         await download(
                             sel,

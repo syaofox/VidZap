@@ -145,6 +145,7 @@ async def start_download(
         "outtmpl": str(DOWNLOADS_DIR / "%(extractor)s/%(title)s/%(title)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
+        "noplaylist": True,
     }
 
     if cookie_file:
@@ -223,6 +224,16 @@ def _save_download_history(url: str, format_id: str, file_path: str) -> None:
             """,
             (url, format_id, file_path),
         )
+
+
+def find_existing_download(url: str) -> dict | None:
+    """查找指定 URL 的已有下载记录，返回最近一条或 None"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM downloads WHERE url = ? ORDER BY id DESC LIMIT 1",
+            (url,),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def create_download_record(url: str, title: str, thumbnail: str, format_id: str) -> int:
