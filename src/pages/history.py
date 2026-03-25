@@ -75,49 +75,60 @@ def render() -> None:
         _start_timer()
 
     def refresh_active() -> None:
-        active_count = 0
-        need_rebuild = False
-        for rec_id, refs in dynamic_refs.items():
-            rec = get_download_by_id(rec_id)
-            if not rec:
-                continue
-            status = rec["status"]
-            if status in ("pending", "downloading"):
-                active_count += 1
-            icon, label_text, color_class = STATUS_MAP.get(status, ("❓", "未知", "text-grey"))
-            old = refs["status_label"]
-            old.text = f"{icon} {label_text}"
-            old.classes(replace=f"{color_class} text-body2")
+        try:
+            client = ui.context.client
+            if getattr(client, "_deleted", False):
+                if auto_timer:
+                    auto_timer.deactivate()
+                return
+        except Exception:
+            return
+        try:
+            active_count = 0
+            need_rebuild = False
+            for rec_id, refs in dynamic_refs.items():
+                rec = get_download_by_id(rec_id)
+                if not rec:
+                    continue
+                status = rec["status"]
+                if status in ("pending", "downloading"):
+                    active_count += 1
+                icon, label_text, color_class = STATUS_MAP.get(status, ("❓", "未知", "text-grey"))
+                old = refs["status_label"]
+                old.text = f"{icon} {label_text}"
+                old.classes(replace=f"{color_class} text-body2")
 
-            # 更新下载进度
-            if status == "downloading" and "progress_bar" in refs:
-                progress = _download_progress.get(rec_id, {})
-                percent = progress.get("percent", 0)
-                speed = progress.get("speed", "")
-                eta = progress.get("eta", "")
-                refs["progress_bar"].value = percent / 100
-                if "progress_label" in refs:
-                    refs["progress_label"].text = (
-                        f"{percent:.2f}% - {speed} - ETA: {eta}" if speed else "等待中..."
-                    )
+                # 更新下载进度
+                if status == "downloading" and "progress_bar" in refs:
+                    progress = _download_progress.get(rec_id, {})
+                    percent = progress.get("percent", 0)
+                    speed = progress.get("speed", "")
+                    eta = progress.get("eta", "")
+                    refs["progress_bar"].value = percent / 100
+                    if "progress_label" in refs:
+                        refs["progress_label"].text = (
+                            f"{percent:.2f}% - {speed} - ETA: {eta}" if speed else "等待中..."
+                        )
 
-            # 检测状态变化
-            last_status = refs.get("last_status")
-            if last_status != status:
-                refs["last_status"] = status
-                # 如果从下载中变为完成或失败，需要重建以移除进度条
-                if last_status == "downloading" and status in ("completed", "failed"):
-                    need_rebuild = True
-                else:
-                    refs["actions"].clear()
-                    with refs["actions"]:
-                        _render_actions(rec)
+                # 检测状态变化
+                last_status = refs.get("last_status")
+                if last_status != status:
+                    refs["last_status"] = status
+                    # 如果从下载中变为完成或失败，需要重建以移除进度条
+                    if last_status == "downloading" and status in ("completed", "failed"):
+                        need_rebuild = True
+                    else:
+                        refs["actions"].clear()
+                        with refs["actions"]:
+                            _render_actions(rec)
 
-        if need_rebuild:
-            rebuild()
-            _start_timer()
-        elif active_count == 0:
-            auto_timer.deactivate()
+            if need_rebuild:
+                rebuild()
+                _start_timer()
+            elif active_count == 0:
+                auto_timer.deactivate()
+        except Exception:
+            pass
 
     auto_timer: ui.timer | None = None
 
@@ -262,6 +273,13 @@ def _render_actions(rec: dict) -> None:
     file_path = rec.get("file_path") or ""
     file_exists = file_path and os.path.isfile(file_path)
 
+    if status in ("pending", "downloading"):
+        ui.button(
+            "停止",
+            icon="stop",
+            on_click=lambda r=rec: _stop_download(r),
+        ).props("size=sm flat color=warning")
+
     if status == "failed":
         ui.button(
             "重试",
@@ -293,10 +311,21 @@ async def _retry_download(rec: dict) -> None:
     rec_id = rec["id"]
     update_download_status(rec_id, "downloading")
 
+    def _make_callback(did: int):
+        def cb(percent: float, speed: str, eta: str) -> None:
+            _download_progress[did] = {
+                "percent": percent,
+                "speed": speed,
+                "eta": eta,
+            }
+
+        return cb
+
     await download_queue.enqueue(
         url=rec["url"],
         format_id=rec["format_id"] or "best",
         cookie_file=get_cookie_for_url(rec["url"]),
+        progress_callback=_make_callback(rec_id),
         download_id=rec_id,
     )
 
@@ -358,7 +387,53 @@ def _do_clear(dialog) -> None:
 
 
 def _delete_record(rec: dict) -> None:
-    """删除记录"""
-    delete_download_record(rec["id"])
+    """删除记录（下载中任务先停止再删除）"""
+    rec_id = rec["id"]
+    status = rec["status"]
+
+    if status in ("pending", "downloading"):
+        with ui.dialog() as dialog, ui.card():
+            ui.label("该任务正在下载中，确定停止并删除吗？").classes("text-body1")
+            with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                ui.button("取消", on_click=dialog.close).props("flat")
+                ui.button(
+                    "确定",
+                    on_click=lambda: _do_delete_with_stop(dialog, rec_id),
+                ).props("color=negative")
+        dialog.open()
+    else:
+        delete_download_record(rec_id)
+        ui.notify("已删除", type="info")
+        ui.navigate.to("/history")
+
+
+async def _do_delete_with_stop(dialog, download_id: int) -> None:
+    dialog.close()
+    await download_queue.cancel(download_id)
+    _download_progress.pop(download_id, None)
+    delete_download_record(download_id)
     ui.notify("已删除", type="info")
+    ui.navigate.to("/history")
+
+
+def _stop_download(rec: dict) -> None:
+    """停止下载任务"""
+    rec_id = rec["id"]
+    with ui.dialog() as dialog, ui.card():
+        ui.label("确定停止该下载任务吗？").classes("text-body1")
+        with ui.row().classes("w-full justify-end gap-2 mt-2"):
+            ui.button("取消", on_click=dialog.close).props("flat")
+            ui.button(
+                "确定",
+                on_click=lambda: _do_stop(dialog, rec_id),
+            ).props("color=negative")
+    dialog.open()
+
+
+async def _do_stop(dialog, download_id: int) -> None:
+    """执行停止下载"""
+    dialog.close()
+    await download_queue.cancel(download_id)
+    _download_progress.pop(download_id, None)
+    ui.notify("已停止下载", type="info")
     ui.navigate.to("/history")

@@ -30,6 +30,8 @@ class DownloadQueue:
         self._queues: dict[str, asyncio.Queue[DownloadTask | None]] = {}
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
+        self._cancel_events: dict[int, asyncio.Event] = {}
+        self._active_tasks: dict[int, DownloadTask] = {}
 
     def _get_origin(self, url: str) -> str:
         parsed = urlparse(url)
@@ -64,8 +66,24 @@ class DownloadQueue:
                 self._workers[origin] = asyncio.ensure_future(self._worker(origin))
             await self._queues[origin].put(task)
 
+    async def cancel(self, download_id: int) -> bool:
+        """取消指定 download_id 的下载任务。
+
+        如果任务正在运行，设置取消事件让 yt-dlp 中断。
+        返回 True 表示找到并取消了任务。
+        """
+        if download_id in self._cancel_events:
+            self._cancel_events[download_id].set()
+            return True
+        return False
+
+    def is_cancelled(self, download_id: int) -> bool:
+        """检查任务是否已被取消"""
+        event = self._cancel_events.get(download_id)
+        return event is not None and event.is_set()
+
     async def _worker(self, origin: str) -> None:
-        from core.ytdlp_handler import start_download
+        from core.ytdlp_handler import DownloadCancelledError, start_download
 
         queue = self._queues[origin]
         while True:
@@ -73,6 +91,13 @@ class DownloadQueue:
             if task is None:
                 queue.task_done()
                 break
+
+            did = task.download_id
+            cancel_event: asyncio.Event | None = None
+            if did is not None:
+                cancel_event = asyncio.Event()
+                self._cancel_events[did] = cancel_event
+                self._active_tasks[did] = task
 
             try:
                 await start_download(
@@ -84,9 +109,16 @@ class DownloadQueue:
                     subtitle_langs=task.subtitle_langs,
                     progress_callback=task.progress_callback,
                     download_id=task.download_id,
+                    cancel_event=cancel_event,
                 )
+            except DownloadCancelledError:
+                logger.info("Download cancelled for %s", task.url)
             except Exception:
                 logger.exception("Download failed for %s", task.url)
+            finally:
+                if did is not None:
+                    self._cancel_events.pop(did, None)
+                    self._active_tasks.pop(did, None)
 
             queue.task_done()
 
@@ -98,6 +130,8 @@ class DownloadQueue:
                 await task
             self._queues.clear()
             self._workers.clear()
+            self._cancel_events.clear()
+            self._active_tasks.clear()
 
 
 download_queue = DownloadQueue()

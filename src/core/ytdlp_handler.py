@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 DOWNLOADS_DIR = Path("downloads")
 
 
+class DownloadCancelledError(Exception):
+    """用户取消下载时抛出"""
+
+    pass
+
+
 def _format_speed(speed: float | None) -> str:
     """格式化下载速度为人类可读格式"""
     if speed is None:
@@ -129,12 +135,16 @@ async def start_download(
     subtitle_langs: list[str] | None = None,
     progress_state: dict | None = None,
     download_id: int | None = None,
+    cancel_event: asyncio.Event | None = None,
 ) -> str:
     """开始下载，支持格式合并"""
     init_downloads_dir()
     has_ffmpeg = check_ffmpeg()
 
     def hook(d) -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise DownloadCancelledError("用户取消下载")
+
         status = d.get("status", "")
 
         if status == "downloading":
@@ -242,6 +252,11 @@ async def start_download(
     loop = asyncio.get_event_loop()
     try:
         file_path = await loop.run_in_executor(None, lambda: _download_sync(url, opts))
+    except DownloadCancelledError:
+        if download_id is not None:
+            update_download_status(download_id, "failed", error_msg="用户取消")
+        _cleanup_partial_files(url, opts)
+        raise
     except Exception as e:
         if download_id is not None:
             update_download_status(download_id, "failed", error_msg=str(e)[:500])
@@ -263,6 +278,8 @@ def _download_sync(url: str, opts: dict) -> str:
             ydl.download([url])
             info = ydl.extract_info(url, download=False)
             return str(ydl.prepare_filename(info))
+    except DownloadCancelledError:
+        raise
     except Exception:
         if opts.get("cookiefile"):
             fallback = {k: v for k, v in opts.items() if k != "cookiefile"}
@@ -271,6 +288,37 @@ def _download_sync(url: str, opts: dict) -> str:
                 info = ydl.extract_info(url, download=False)
                 return str(ydl.prepare_filename(info))
         raise
+
+
+def _cleanup_partial_files(url: str, opts: dict) -> None:
+    """清理取消下载后残留的部分文件"""
+    try:
+        outtmpl = opts.get("outtmpl", "")
+        if not outtmpl:
+            return
+        # 用 yt-dlp 获取预期文件名
+        dl_opts = dict(opts)
+        dl_opts["skip_download"] = True
+        with yt_dlp.YoutubeDL(dl_opts) as ydl:
+            try:
+                info = ydl.extract_info(url, download=False)
+                expected = Path(ydl.prepare_filename(info))
+            except Exception:
+                return
+
+        # 查找并删除匹配的部分文件（含 .part 等后缀）
+        parent = expected.parent
+        stem = expected.stem
+        if parent.is_dir():
+            for f in parent.iterdir():
+                if f.stem == stem or f.name.startswith(expected.name):
+                    try:
+                        f.unlink()
+                        logger.info("Cleaned up partial file: %s", f)
+                    except OSError:
+                        pass
+    except Exception:
+        logger.exception("Failed to cleanup partial files for %s", url)
 
 
 def _save_download_history(url: str, format_id: str, file_path: str) -> None:
