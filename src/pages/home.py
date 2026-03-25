@@ -654,6 +654,26 @@ def render() -> None:
                     "eta": "下载任务已启动...",
                     "download_id": did,
                 }
+
+                # 导入历史页面的进度状态
+                from pages.history import _download_progress
+
+                def progress_callback(percent: float, speed: str, eta: str) -> None:
+                    """进度回调函数，同步更新首页和历史页面的进度"""
+                    progress_state[u] = {
+                        "status": "downloading",
+                        "percent": percent,
+                        "speed": speed,
+                        "eta": eta,
+                        "download_id": did,
+                    }
+                    # 同步更新历史页面的进度
+                    _download_progress[did] = {
+                        "percent": percent,
+                        "speed": speed,
+                        "eta": eta,
+                    }
+
                 try:
                     await start_download(
                         url=u,
@@ -661,6 +681,7 @@ def render() -> None:
                         cookie_file=c,
                         write_thumbnail=write_thumbnail,
                         write_subtitles=write_subtitles,
+                        progress_callback=progress_callback,
                         progress_state=progress_state,
                         download_id=did,
                     )

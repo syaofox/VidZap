@@ -1,5 +1,5 @@
 import asyncio
-import re
+import logging
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -10,7 +10,34 @@ import yt_dlp
 
 from core.db import get_connection
 
+logger = logging.getLogger(__name__)
+
 DOWNLOADS_DIR = Path("downloads")
+
+
+def _format_speed(speed: float | None) -> str:
+    """格式化下载速度为人类可读格式"""
+    if speed is None:
+        return "N/A"
+    if speed < 1024:
+        return f"{speed:.0f} B/s"
+    elif speed < 1024 * 1024:
+        return f"{speed / 1024:.1f} KB/s"
+    else:
+        return f"{speed / (1024 * 1024):.1f} MB/s"
+
+
+def _format_eta(eta: float | None) -> str:
+    """格式化预计剩余时间"""
+    if eta is None:
+        return "N/A"
+    eta_int = int(eta)
+    if eta_int < 60:
+        return f"{eta_int}s"
+    elif eta_int < 3600:
+        return f"{eta_int // 60}:{eta_int % 60:02d}"
+    else:
+        return f"{eta_int // 3600}:{(eta_int % 3600) // 60:02d}:{eta_int % 60:02d}"
 
 
 def check_ffmpeg() -> bool:
@@ -98,27 +125,42 @@ async def start_download(
 
     def hook(d) -> None:
         status = d.get("status", "")
+
         if status == "downloading":
-            percent = d.get("_percent_str", "0%").strip("%")
-            speed = d.get("_speed_str", "N/A")
-            eta = d.get("_eta_str", "N/A")
-            try:
-                p = float(percent)
-            except (ValueError, TypeError):
-                p = 0
+            # 使用可靠的字段计算进度
+            downloaded = d.get("downloaded_bytes", 0) or 0
+            total = d.get("total_bytes") or d.get("total_bytes_estimate")
+
+            # 计算百分比
+            if total and total > 0:
+                percent = (downloaded / total) * 100
+            else:
+                percent = 0
+
+            speed = d.get("speed")
+            eta = d.get("eta")
+
+            # 格式化显示
+            speed_str = _format_speed(speed)
+            eta_str = _format_eta(eta)
+
+            logger.debug(f"Download progress: {percent:.1f}% - {speed_str} - ETA: {eta_str}")
+
             if progress_state is not None:
                 progress_state[url] = {
                     "status": "downloading",
-                    "percent": p,
-                    "speed": speed,
-                    "eta": eta,
+                    "percent": percent,
+                    "speed": speed_str,
+                    "eta": eta_str,
                 }
             if progress_callback:
                 try:
-                    progress_callback(p, speed, eta)
+                    progress_callback(percent, speed_str, eta_str)
                 except Exception:
                     pass
+
         elif status == "finished":
+            logger.debug("Download finished")
             if progress_state is not None:
                 progress_state[url] = {
                     "status": "finished",
@@ -131,7 +173,9 @@ async def start_download(
                     progress_callback(100, "完成", "0")
                 except Exception:
                     pass
+
         elif status == "error":
+            logger.error(f"Download error: {d}")
             if progress_state is not None:
                 progress_state[url] = {
                     "status": "error",

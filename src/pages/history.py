@@ -20,6 +20,9 @@ STATUS_MAP = {
     "failed": ("❌", "失败", "text-negative"),
 }
 
+# 全局下载进度状态（用于历史页面显示）
+_download_progress: dict[int, dict] = {}
+
 
 def render() -> None:
     """渲染下载历史页面"""
@@ -84,6 +87,19 @@ def render() -> None:
             old = refs["status_label"]
             old.text = f"{icon} {label_text}"
             old.classes(replace=f"{color_class} text-body2")
+
+            # 更新下载进度
+            if status == "downloading" and "progress_bar" in refs:
+                progress = _download_progress.get(rec_id, {})
+                percent = progress.get("percent", 0)
+                speed = progress.get("speed", "")
+                eta = progress.get("eta", "")
+                refs["progress_bar"].value = percent / 100
+                if "progress_label" in refs:
+                    refs["progress_label"].text = (
+                        f"{percent:.1f}% - {speed} - ETA: {eta}" if speed else "等待中..."
+                    )
+
             if refs.get("last_status") != status:
                 refs["last_status"] = status
                 refs["actions"].clear()
@@ -138,18 +154,34 @@ def _render_list_card(rec: dict, dynamic_refs: dict) -> None:
 
                 if status == "failed" and rec.get("error_msg"):
                     ui.label(f"错误: {rec['error_msg']}").classes("text-negative text-caption mt-1")
-                if status == "downloading":
-                    ui.linear_progress(value=0).classes("mt-1")
 
             actions_container = ui.column().classes("gap-1")
             with actions_container:
                 _render_actions(rec)
 
-        dynamic_refs[rec_id] = {
-            "status_label": status_label,
-            "actions": actions_container,
-            "last_status": status,
-        }
+        if status == "downloading":
+            progress = _download_progress.get(rec_id, {})
+            percent = progress.get("percent", 0)
+            speed = progress.get("speed", "")
+            eta = progress.get("eta", "")
+            with ui.column().classes("w-full mt-2"):
+                progress_bar = ui.linear_progress(value=percent / 100)
+                progress_label = ui.label(
+                    f"{percent:.1f}% - {speed} - ETA: {eta}" if speed else "等待中..."
+                ).classes("text-caption text-grey")
+            dynamic_refs[rec_id] = {
+                "status_label": status_label,
+                "actions": actions_container,
+                "last_status": status,
+                "progress_bar": progress_bar,
+                "progress_label": progress_label,
+            }
+        else:
+            dynamic_refs[rec_id] = {
+                "status_label": status_label,
+                "actions": actions_container,
+                "last_status": status,
+            }
 
 
 def _render_grid_card(rec: dict, dynamic_refs: dict) -> None:
@@ -179,18 +211,34 @@ def _render_grid_card(rec: dict, dynamic_refs: dict) -> None:
 
             if status == "failed" and rec.get("error_msg"):
                 ui.label(rec["error_msg"][:30]).classes("text-negative text-caption truncate")
-            if status == "downloading":
-                ui.linear_progress(value=0).classes("mt-1")
 
             actions_container = ui.row().classes("gap-0 mt-1")
             with actions_container:
                 _render_actions(rec)
 
-        dynamic_refs[rec_id] = {
-            "status_label": status_label,
-            "actions": actions_container,
-            "last_status": status,
-        }
+        if status == "downloading":
+            progress = _download_progress.get(rec_id, {})
+            percent = progress.get("percent", 0)
+            speed = progress.get("speed", "")
+            eta = progress.get("eta", "")
+            with ui.column().classes("px-3 pb-3 w-full"):
+                progress_bar = ui.linear_progress(value=percent / 100)
+                progress_label = ui.label(
+                    f"{percent:.1f}% - {speed} - ETA: {eta}" if speed else "等待中..."
+                ).classes("text-caption text-grey")
+            dynamic_refs[rec_id] = {
+                "status_label": status_label,
+                "actions": actions_container,
+                "last_status": status,
+                "progress_bar": progress_bar,
+                "progress_label": progress_label,
+            }
+        else:
+            dynamic_refs[rec_id] = {
+                "status_label": status_label,
+                "actions": actions_container,
+                "last_status": status,
+            }
 
 
 def _render_actions(rec: dict) -> None:
