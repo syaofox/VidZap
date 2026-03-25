@@ -26,7 +26,8 @@
     "PYTHON_VERSION": "3.13",
     "UV_INIT_BARE": "false",
     "INSTALL_IPYKERNEL": "false",
-    "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv"
+    "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv",
+    "NICEVID_RELOAD": "true"
   },
   "postCreateCommand": "make post-create",
   "mounts": []

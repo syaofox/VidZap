@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +15,10 @@ from pages import history, home, settings
 # 创建必要的目录
 Path("downloads").mkdir(exist_ok=True)
 Path("cookies").mkdir(exist_ok=True)
+
+_data_dir = os.environ.get("NICEVID_DATA_DIR")
+if _data_dir:
+    Path(_data_dir).mkdir(parents=True, exist_ok=True)
 
 # 初始化数据库
 init_db()
@@ -66,11 +71,16 @@ def history_page() -> None:
 
 
 if __name__ in {"__main__", "__mp_main__"}:
+    _reload = os.environ.get("NICEVID_RELOAD", "").lower() == "true"
+    _storage_secret = os.environ.get(
+        "NICEVID_STORAGE_SECRET", "nicevid-secret-key-change-in-production"
+    )
+
     ui.run(
         host="0.0.0.0",
         port=8080,
         title="NiceVid",
-        reload=True,
+        reload=_reload,
         favicon="🎬",
-        storage_secret="nicevid-secret-key-change-in-production",
+        storage_secret=_storage_secret,
     )

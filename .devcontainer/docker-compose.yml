@@ -3,8 +3,8 @@ version: '3.8'
 services:
   app:
     build: .
-    image: vidzap
-    container_name: vidzap
+    image: vidzap:dev
+    container_name: vidzap:dev
     volumes:
       - ..:/vidzap:cached
       - /home/syaofox/.agents:/home/vscode/.agents

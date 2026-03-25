@@ -1,8 +1,10 @@
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-DB_PATH = Path("database.sqlite")
+_DATA_DIR = Path(os.environ.get("NICEVID_DATA_DIR", "."))
+DB_PATH = _DATA_DIR / "database.sqlite"
 
 
 def init_db() -> None:

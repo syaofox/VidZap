@@ -1,0 +1,17 @@
+services:
+  nicevid:
+    build: .
+    ports:
+      - "8080:8080"
+    image: vidzap
+    container_name: vidzap
+    environment:
+      - NICEVID_DATA_DIR=/app/data
+      - NICEVID_STORAGE_SECRET=change-me-to-a-random-string
+      - NICEVID_RELOAD=false
+      - NICEGUI_STORAGE_PATH=/app/data/.nicegui
+    volumes:
+      - ./downloads:/app/downloads
+      - ./cookies:/app/cookies
+      - ./data:/app/data
+    restart: unless-stopped

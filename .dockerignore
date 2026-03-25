@@ -1,0 +1,16 @@
+.git
+.venv
+__pycache__
+.ruff_cache
+.mypy_cache
+.devcontainer
+.github
+.vscode
+docs
+*.log
+.env
+database.sqlite
+downloads
+cookies
+.nicegui
+data
