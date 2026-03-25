@@ -273,9 +273,6 @@ def render() -> None:
     # 格式选择表格
     format_card = ui.card().classes("w-full max-w-4xl mx-auto mt-4 p-6 hidden")
 
-    # 进度区域
-    progress_card = ui.card().classes("w-full max-w-4xl mx-auto mt-4 p-6 hidden")
-
     # 存储分析结果
     analysis_result: dict = {"info": None, "urls": []}
 
@@ -283,7 +280,7 @@ def render() -> None:
         """分析视频链接"""
         analyze_btn.disable()
         # 清理上一轮的卡片
-        for card in (info_card, format_card, progress_card):
+        for card in (info_card, format_card):
             card.classes("hidden")
             card.clear()
         try:
@@ -586,42 +583,6 @@ def render() -> None:
             ui.notify("请先分析链接", type="warning")
             return
 
-        progress_card.classes(remove="hidden")
-        progress_card.clear()
-
-        progress_state: dict = {}
-
-        with progress_card:
-            ui.label("下载进度").classes("text-h6 mb-2")
-
-            @ui.refreshable
-            def progress_display() -> None:
-                for u in urls:
-                    state = progress_state.get(
-                        u, {"status": "waiting", "percent": 0, "speed": "", "eta": ""}
-                    )
-                    status = state.get("status", "waiting")
-                    pct = state.get("percent", 0)
-                    with ui.card().classes("w-full mb-2 p-2"):
-                        display = u[:50] + "..." if len(u) > 50 else u
-                        ui.label(display).classes("text-caption")
-                        if status == "downloading":
-                            ui.linear_progress(value=pct / 100)
-                            ui.label(f"{state.get('speed', '')} - ETA: {state.get('eta', '')}")
-                        elif status == "finished":
-                            ui.linear_progress(value=1.0)
-                            ui.label("✅ 完成")
-                        elif status == "error":
-                            ui.label(f"❌ {state.get('eta', '未知错误')}").classes("text-negative")
-                        elif status == "starting":
-                            ui.linear_progress(value=0)
-                            ui.label(state.get("eta", "初始化中..."))
-                        else:
-                            ui.linear_progress(value=0)
-                            ui.label("等待中...")
-
-            progress_display()
-
         # 构建 format_id
         if len(selected_formats) > 1:
             format_id = "+".join([f["format_id"] for f in selected_formats])
@@ -638,36 +599,13 @@ def render() -> None:
                 thumbnail=info.get("thumbnail", ""),
                 format_id=format_id,
             )
-            progress_state[url] = {
-                "status": "starting",
-                "percent": 0,
-                "speed": "",
-                "eta": "初始化中...",
-                "download_id": dl_id,
-            }
 
             async def _run_download(u=url, c=cookie, did=dl_id) -> None:
-                progress_state[u] = {
-                    "status": "starting",
-                    "percent": 0,
-                    "speed": "",
-                    "eta": "下载任务已启动...",
-                    "download_id": did,
-                }
-
                 # 导入历史页面的进度状态
                 from pages.history import _download_progress
 
                 def progress_callback(percent: float, speed: str, eta: str) -> None:
-                    """进度回调函数，同步更新首页和历史页面的进度"""
-                    progress_state[u] = {
-                        "status": "downloading",
-                        "percent": percent,
-                        "speed": speed,
-                        "eta": eta,
-                        "download_id": did,
-                    }
-                    # 同步更新历史页面的进度
+                    """进度回调函数，更新历史页面的进度"""
                     _download_progress[did] = {
                         "percent": percent,
                         "speed": speed,
@@ -682,31 +620,19 @@ def render() -> None:
                         write_thumbnail=write_thumbnail,
                         write_subtitles=write_subtitles,
                         progress_callback=progress_callback,
-                        progress_state=progress_state,
                         download_id=did,
                     )
-                except Exception as e:
-                    progress_state[u] = {
-                        "status": "error",
-                        "percent": 0,
-                        "speed": "",
-                        "eta": str(e)[:100],
-                        "download_id": did,
-                    }
+                except Exception:
+                    pass
 
             background_tasks.create(_run_download())
 
-        # 定时刷新
-        def do_refresh() -> None:
-            progress_display.refresh()
-            all_done = all(
-                progress_state.get(u, {}).get("status") in ("finished", "error") for u in urls
-            )
-            if all_done:
-                refresh_timer.deactivate()
-                if on_done:
-                    on_done()
+        if on_done:
+            on_done()
 
-        refresh_timer = ui.timer(1.0, do_refresh)
-
-        ui.notify("下载任务已创建", type="positive")
+        count = len(urls)
+        ui.notify(
+            f"已添加 {count} 个下载任务，请前往下载历史页面查看进度",
+            type="positive",
+            multi_line=True,
+        )
