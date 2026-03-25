@@ -76,6 +76,7 @@ def render() -> None:
 
     def refresh_active() -> None:
         active_count = 0
+        need_rebuild = False
         for rec_id, refs in dynamic_refs.items():
             rec = get_download_by_id(rec_id)
             if not rec:
@@ -97,15 +98,25 @@ def render() -> None:
                 refs["progress_bar"].value = percent / 100
                 if "progress_label" in refs:
                     refs["progress_label"].text = (
-                        f"{percent:.1f}% - {speed} - ETA: {eta}" if speed else "等待中..."
+                        f"{percent:.2f}% - {speed} - ETA: {eta}" if speed else "等待中..."
                     )
 
-            if refs.get("last_status") != status:
+            # 检测状态变化
+            last_status = refs.get("last_status")
+            if last_status != status:
                 refs["last_status"] = status
-                refs["actions"].clear()
-                with refs["actions"]:
-                    _render_actions(rec)
-        if active_count == 0:
+                # 如果从下载中变为完成或失败，需要重建以移除进度条
+                if last_status == "downloading" and status in ("completed", "failed"):
+                    need_rebuild = True
+                else:
+                    refs["actions"].clear()
+                    with refs["actions"]:
+                        _render_actions(rec)
+
+        if need_rebuild:
+            rebuild()
+            _start_timer()
+        elif active_count == 0:
             auto_timer.deactivate()
 
     auto_timer: ui.timer | None = None
@@ -165,9 +176,9 @@ def _render_list_card(rec: dict, dynamic_refs: dict) -> None:
             speed = progress.get("speed", "")
             eta = progress.get("eta", "")
             with ui.column().classes("w-full mt-2"):
-                progress_bar = ui.linear_progress(value=percent / 100)
+                progress_bar = ui.linear_progress(value=percent / 100, show_value=False)
                 progress_label = ui.label(
-                    f"{percent:.1f}% - {speed} - ETA: {eta}" if speed else "等待中..."
+                    f"{percent:.2f}% - {speed} - ETA: {eta}" if speed else "等待中..."
                 ).classes("text-caption text-grey")
             dynamic_refs[rec_id] = {
                 "status_label": status_label,
@@ -222,9 +233,9 @@ def _render_grid_card(rec: dict, dynamic_refs: dict) -> None:
             speed = progress.get("speed", "")
             eta = progress.get("eta", "")
             with ui.column().classes("px-3 pb-3 w-full"):
-                progress_bar = ui.linear_progress(value=percent / 100)
+                progress_bar = ui.linear_progress(value=percent / 100, show_value=False)
                 progress_label = ui.label(
-                    f"{percent:.1f}% - {speed} - ETA: {eta}" if speed else "等待中..."
+                    f"{percent:.2f}% - {speed} - ETA: {eta}" if speed else "等待中..."
                 ).classes("text-caption text-grey")
             dynamic_refs[rec_id] = {
                 "status_label": status_label,
