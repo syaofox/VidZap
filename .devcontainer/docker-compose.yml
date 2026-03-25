@@ -1,11 +1,10 @@
-version: '3.8'
-
 services:
   app:
     build: .
     image: vidzap:dev
-    container_name: vidzap:dev
+    container_name: vidzap-dev
     volumes:
       - ..:/vidzap:cached
       - /home/syaofox/.agents:/home/vscode/.agents
+      - /home/syaofox/.config/opencode/commands:/home/vscode/.config/opencode/commands
     command: sleep infinity
