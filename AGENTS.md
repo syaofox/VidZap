@@ -13,6 +13,7 @@ src/
     db.py              # SQLite database (downloads, cookies tables)
     ytdlp_handler.py   # yt-dlp wrapper: extract_info, start_download, format logic
     cookie_manager.py  # Cookie file + DB management per domain
+    version.py         # App version from pyproject.toml
   pages/
     home.py            # Main page: URL input, analysis, format selection, download
     history.py         # Download history with list/grid view, retry, preview
@@ -39,6 +40,10 @@ make type-check          # or: uv run mypy .
 
 # Sync dependencies
 make sync                # or: uv run sync
+
+# Docker
+docker compose up -d     # Production deployment
+docker compose build     # Rebuild image
 ```
 
 No test framework is configured yet. When adding tests, use `pytest` and run with `uv run pytest`.
@@ -49,6 +54,7 @@ No test framework is configured yet. When adding tests, use `pytest` and run wit
 
 - Target Python 3.13. Use modern syntax: `str | None` (not `Optional[str]`), `dict` (not `Dict`), `list` (not `List`).
 - Line length: 100 characters (ruff config in `pyproject.toml`).
+- Ruff rules: `E`, `F`, `I`, `N`, `W`, `UP` (pyupgrade).
 
 ### Imports
 
@@ -77,6 +83,7 @@ No test framework is configured yet. When adding tests, use `pytest` and run wit
 - Use `dict | None` for optional parameters, not `Optional`.
 - `Callable` from `collections.abc`, not `typing`.
 - `dict` return types from SQLite: `list[dict]` via `[dict(row) for row in rows]`.
+- mypy configured with `warn_return_any=true`, `disallow_untyped_defs=false`.
 
 ### Error handling
 
@@ -98,6 +105,13 @@ No test framework is configured yet. When adding tests, use `pytest` and run wit
 - SQLite via `core.db.get_connection()` context manager (auto-commit, auto-close).
 - Schema changes: add `ALTER TABLE` in `init_db()` wrapped in try/except for idempotency.
 - Never commit `database.sqlite` — it's gitignored.
+
+## Deployment
+
+- Docker multi-stage build: `Dockerfile` uses `python:3.13-slim`, installs `ffmpeg` and `uv`.
+- Runtime runs as non-root user `nicevid` (UID 1000).
+- Environment variables: `NICEVID_DATA_DIR`, `NICEVID_STORAGE_SECRET`, `NICEVID_RELOAD`.
+- Volumes: `./downloads`, `./cookies`, `./data` mounted for persistence.
 
 ## Key dependencies
 
