@@ -8,17 +8,18 @@ NiceVid is a Python 3.13 web application for downloading videos via yt-dlp, buil
 
 ```
 src/
-  main.py              # Entry point: NiceGUI app setup, routes
+  main.py                 # Entry point: NiceGUI app setup, routes
   core/
-    db.py              # SQLite database (downloads, cookies tables)
-    ytdlp_handler.py   # yt-dlp wrapper: extract_info, start_download, format logic
-    cookie_manager.py  # Cookie file + DB management per domain
-    version.py         # App version from pyproject.toml
+    db.py                 # SQLite database (downloads, cookies tables)
+    ytdlp_handler.py      # yt-dlp wrapper: extract_info, start_download, format logic
+    cookie_manager.py     # Cookie file + DB management per domain
+    download_queue.py     # Download queue: same-origin sequential, cross-origin parallel
+    version.py            # App version from pyproject.toml
   pages/
-    home.py            # Main page: URL input, analysis, format selection, download
-    history.py         # Download history with list/grid view, retry, preview
-    settings.py        # Cookie management page
-  components/          # (reserved for shared UI components)
+    home.py               # Main page: URL input, analysis, format selection, download
+    history.py            # Download history with list/grid view, retry, preview
+    settings.py           # Cookie management page
+  components/             # (reserved for shared UI components)
 ```
 
 Runtime artifacts: `database.sqlite`, `downloads/`, `cookies/`, `.nicegui/` — all gitignored.
@@ -94,11 +95,17 @@ No test framework is configured yet. When adding tests, use `pytest` and run wit
 ### NiceGUI patterns
 
 - UI built declaratively with context managers: `with ui.card():`, `with ui.row():`.
-- Background tasks: `background_tasks.create(coroutine())` from `nicegui`.
 - Thread offloading: `asyncio.get_event_loop().run_in_executor(None, sync_fn)`.
 - Client storage: `app.storage.user[key]` with `storage_secret` set in `ui.run()`.
 - Timers: `ui.timer(interval, callback)` for polling; `.deactivate()` to stop.
 - Refreshable UI: `@ui.refreshable` decorator for auto-rebuilding sections.
+
+### Download concurrency
+
+- All downloads go through `core.download_queue.download_queue` (global singleton).
+- Same-origin downloads (same domain) run sequentially; different origins run in parallel with no limit.
+- Use `await download_queue.enqueue(...)` instead of calling `start_download` directly.
+- The queue manages `asyncio.Queue` per origin with dedicated worker coroutines.
 
 ### Database
 
