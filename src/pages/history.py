@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 
@@ -34,7 +35,7 @@ def render() -> None:
     container = ui.column().classes("w-full max-w-5xl mx-auto mt-8 px-6")
     dynamic_refs: dict[int, dict] = {}
 
-    def rebuild() -> None:
+    def rebuild(records: list[dict] | None = None) -> None:
         dynamic_refs.clear()
         container.clear()
         with container:
@@ -55,7 +56,12 @@ def render() -> None:
                         on_click=lambda: switch("list"),
                     ).props("flat round size=sm").tooltip("切换为列表视图")
 
-            records = get_download_history()
+            if records is None:
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.spinner(size="sm")
+                    ui.label("加载中...").classes("text-grey")
+                return
+
             if not records:
                 ui.label("暂无下载记录").classes("text-center text-grey py-12 text-h6")
                 return
@@ -68,11 +74,15 @@ def render() -> None:
                 for rec in records:
                     _render_list_card(rec, dynamic_refs)
 
+    async def _load_and_rebuild() -> None:
+        records = await asyncio.get_event_loop().run_in_executor(None, get_download_history)
+        rebuild(records)
+        _start_timer()
+
     def switch(mode: str) -> None:
         layout["mode"] = mode
         app.storage.user["history_layout"] = mode
-        rebuild()
-        _start_timer()
+        ui.timer(0.1, _load_and_rebuild, once=True)
 
     def refresh_active() -> None:
         try:
@@ -144,8 +154,7 @@ def render() -> None:
         if has_active:
             auto_timer = ui.timer(2.0, refresh_active)
 
-    rebuild()
-    _start_timer()
+    ui.timer(0.1, _load_and_rebuild, once=True)
 
 
 def _render_list_card(rec: dict, dynamic_refs: dict) -> None:

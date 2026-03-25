@@ -111,7 +111,7 @@ def render() -> None:
     }
 
     # 常用站点名称 -> URL 映射（用于 chip 跳转）
-    _POPULAR_URLS = {
+    _POPULAR_URLS = {  # noqa: N806
         "YouTube": "https://www.youtube.com",
         "Bilibili": "https://www.bilibili.com",
         "抖音": "https://www.douyin.com",
@@ -197,7 +197,13 @@ def render() -> None:
                 on_click=lambda: (supported_sites_dialog.close(), all_sites_dialog.open()),
             ).props("flat dense size=sm color=primary")
         with ui.row().classes("w-full justify-between items-center mt-2"):
-            ver_label = ui.label(f"yt-dlp {get_ytdlp_version()}").classes("text-caption text-grey")
+            ver_label = ui.label("yt-dlp 加载中...").classes("text-caption text-grey")
+
+            async def _load_version() -> None:
+                ver = await asyncio.get_event_loop().run_in_executor(None, get_ytdlp_version)
+                ver_label.text = f"yt-dlp {ver}"
+
+            ui.timer(0.1, _load_version, once=True)
 
             async def _update_ytdlp() -> None:
                 update_btn.disable()
@@ -227,10 +233,12 @@ def render() -> None:
             ui.button("关闭", on_click=supported_sites_dialog.close).props("flat")
 
     # 全部站点弹窗（从 yt-dlp 动态获取）
-    with ui.dialog() as all_sites_dialog, ui.card().classes("w-[720px]"):
-        ui.label("全部支持的站点（来自 yt-dlp）").classes("text-h6 mb-2")
-        with ui.scroll_area().classes("h-[480px]"):
-            all_extractors = get_supported_sites()
+    sites_container: dict = {"container": None}
+
+    async def _load_sites() -> None:
+        all_extractors = await asyncio.get_event_loop().run_in_executor(None, get_supported_sites)
+        sites_container["container"].clear()
+        with sites_container["container"]:
             ui.label(f"共 {len(all_extractors)} 个提取器").classes("text-caption text-grey mb-2")
             with ui.column().classes("gap-0 w-full"):
                 for name, url in all_extractors:
@@ -242,6 +250,16 @@ def render() -> None:
                             )
                         else:
                             ui.label("-").classes("text-grey text-body2")
+
+    with ui.dialog() as all_sites_dialog, ui.card().classes("w-[720px]"):
+        ui.label("全部支持的站点（来自 yt-dlp）").classes("text-h6 mb-2")
+        with ui.scroll_area().classes("h-[480px]"):
+            with ui.column().classes("w-full"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.spinner(size="sm")
+                    ui.label("加载中...").classes("text-grey")
+                sites_container["container"] = ui.column().classes("gap-0 w-full")
+                all_sites_dialog.on("open", lambda: ui.timer(0.1, _load_sites, once=True))
         with ui.row().classes("w-full justify-end mt-2"):
             ui.button("关闭", on_click=all_sites_dialog.close).props("flat")
 

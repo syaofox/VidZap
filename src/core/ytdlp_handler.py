@@ -558,8 +558,6 @@ _SITE_URL_MAP: dict[str, str] = {
     "peertube": "https://joinpeertube.org",
     "bandlab": "https://www.bandlab.com",
     "lizhifm": "https://www.lizhi.fm",
-    "ximalaya": "https://www.ximalaya.com",
-    "ted": "https://www.ted.com",
     "twitch:stream": "https://www.twitch.tv",
 }
 
