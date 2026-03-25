@@ -1,15 +1,15 @@
 import os
 from pathlib import Path
 
-from nicegui import app, background_tasks, ui
+from nicegui import app, ui
 
 from core.cookie_manager import get_cookie_for_url
+from core.download_queue import download_queue
 from core.ytdlp_handler import (
     clear_completed_records,
     delete_download_record,
     get_download_by_id,
     get_download_history,
-    start_download,
     update_download_status,
 )
 
@@ -288,23 +288,18 @@ def _render_actions(rec: dict) -> None:
     ).props("size=sm flat color=negative")
 
 
-def _retry_download(rec: dict) -> None:
+async def _retry_download(rec: dict) -> None:
     """重试失败的下载"""
     rec_id = rec["id"]
     update_download_status(rec_id, "downloading")
 
-    async def _run() -> None:
-        try:
-            await start_download(
-                url=rec["url"],
-                format_id=rec["format_id"] or "best",
-                cookie_file=get_cookie_for_url(rec["url"]),
-                download_id=rec_id,
-            )
-        except Exception:
-            pass
+    await download_queue.enqueue(
+        url=rec["url"],
+        format_id=rec["format_id"] or "best",
+        cookie_file=get_cookie_for_url(rec["url"]),
+        download_id=rec_id,
+    )
 
-    background_tasks.create(_run())
     ui.notify("已重新开始下载", type="info")
     ui.navigate.to("/history")
 

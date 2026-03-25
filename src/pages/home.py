@@ -1,9 +1,10 @@
 import asyncio
 from collections.abc import Callable
 
-from nicegui import background_tasks, ui
+from nicegui import ui
 
 from core.cookie_manager import get_cookie_for_url
+from core.download_queue import download_queue
 from core.version import get_app_version
 from core.ytdlp_handler import (
     check_ffmpeg,
@@ -13,7 +14,6 @@ from core.ytdlp_handler import (
     find_existing_download,
     get_supported_sites,
     get_ytdlp_version,
-    start_download,
     update_ytdlp,
 )
 
@@ -617,8 +617,10 @@ def render() -> None:
         else:
             format_id = selected_formats[0]["format_id"]
 
-        # 开始下载
+        # 开始下载（同源串行、不同源并行）
         info = analysis_result.get("info") or {}
+        from pages.history import _download_progress
+
         for url in urls:
             cookie = get_cookie_for_url(url)
             dl_id = create_download_record(
@@ -628,33 +630,26 @@ def render() -> None:
                 format_id=format_id,
             )
 
-            async def _run_download(u=url, c=cookie, did=dl_id) -> None:
-                # 导入历史页面的进度状态
-                from pages.history import _download_progress
-
-                def progress_callback(percent: float, speed: str, eta: str) -> None:
-                    """进度回调函数，更新历史页面的进度"""
+            def _make_callback(did: int):
+                def cb(percent: float, speed: str, eta: str) -> None:
                     _download_progress[did] = {
                         "percent": percent,
                         "speed": speed,
                         "eta": eta,
                     }
 
-                try:
-                    await start_download(
-                        url=u,
-                        format_id=format_id,
-                        cookie_file=c,
-                        write_thumbnail=write_thumbnail,
-                        write_subtitles=write_subtitles,
-                        subtitle_langs=subtitle_langs,
-                        progress_callback=progress_callback,
-                        download_id=did,
-                    )
-                except Exception:
-                    pass
+                return cb
 
-            background_tasks.create(_run_download())
+            await download_queue.enqueue(
+                url=url,
+                format_id=format_id,
+                cookie_file=cookie,
+                write_thumbnail=write_thumbnail,
+                write_subtitles=write_subtitles,
+                subtitle_langs=subtitle_langs,
+                progress_callback=_make_callback(dl_id),
+                download_id=dl_id,
+            )
 
         if on_done:
             on_done()
