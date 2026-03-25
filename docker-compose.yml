@@ -3,7 +3,7 @@ services:
     build: .
     ports:
       - "8080:8080"
-    image: vidzap
+    image: vidzap:latest
     container_name: vidzap
     environment:
       - NICEVID_DATA_DIR=/app/data
