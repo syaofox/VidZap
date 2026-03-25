@@ -49,6 +49,12 @@ docker compose build     # Rebuild image
 
 No test framework is configured yet. When adding tests, use `pytest` and run with `uv run pytest`.
 
+For single-file lint/type-check:
+```bash
+uv run ruff check src/core/download_queue.py
+uv run mypy src/pages/history.py
+```
+
 ## Code style
 
 ### Python version & syntax
@@ -106,6 +112,13 @@ No test framework is configured yet. When adding tests, use `pytest` and run wit
 - Same-origin downloads (same domain) run sequentially; different origins run in parallel with no limit.
 - Use `await download_queue.enqueue(...)` instead of calling `start_download` directly.
 - The queue manages `asyncio.Queue` per origin with dedicated worker coroutines.
+- **Cancellation**: `await download_queue.cancel(download_id)` sets an `asyncio.Event` that the yt-dlp progress hook checks; raising `DownloadCancelledError` to abort. The `finally` block in the worker cleans up tracking dicts.
+- Always pass a `progress_callback` when enqueueing retries so the history page progress bar updates (`_download_progress` dict).
+
+### NiceGUI client lifecycle
+
+- Timer callbacks (e.g., `refresh_active`) must check `ui.context.client._deleted` before modifying UI; if deleted, deactivate the timer and return early. Wrap in `try/except` to handle missing context.
+- Confirmation dialogs: use `ui.dialog()` + `ui.card()` context managers with `on_click` buttons calling a helper; do not use `dialog.on_submit` (not available in NiceGUI 3.9).
 
 ### Database
 
@@ -119,6 +132,8 @@ No test framework is configured yet. When adding tests, use `pytest` and run wit
 - Runtime runs as non-root user `nicevid` (UID 1000).
 - Environment variables: `NICEVID_DATA_DIR`, `NICEVID_STORAGE_SECRET`, `NICEVID_RELOAD`.
 - Volumes: `./downloads`, `./cookies`, `./data` mounted for persistence.
+- `docker compose up -d` for production; `docker compose build` to rebuild.
+- The `NICEVID_STORAGE_SECRET` value in `docker-compose.yml` must be changed before production use.
 
 ## Key dependencies
 
