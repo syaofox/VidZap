@@ -496,15 +496,41 @@ def render() -> None:
                 toggle_label.on("click", toggle_table)
 
                 # ---- 下载选项 ----
+                all_langs = list(
+                    dict.fromkeys(
+                        (info.get("subtitle_langs") or []) + (info.get("auto_subtitle_langs") or [])
+                    )
+                )
+                default_langs = [lang for lang in all_langs if lang.startswith(("zh", "en"))]
+
                 with ui.row().classes("w-full items-center mt-4 gap-4"):
                     thumb_cb = ui.checkbox("下载封面", value=True)
                     sub_cb = ui.checkbox(
                         "下载字幕",
-                        value=True,
+                        value=bool(all_langs),
                     )
-                    if not info.get("has_subtitles"):
+                    sub_select = (
+                        ui.select(
+                            all_langs,
+                            multiple=True,
+                            label="选择字幕语言",
+                            value=default_langs,
+                        )
+                        .props("dense outlined use-chips")
+                        .classes("w-64")
+                    )
+                    if not all_langs:
                         sub_cb.disable()
                         sub_cb.set_value(False)
+                        sub_select.disable()
+                    else:
+                        # 联动：勾选字幕时启用选择器
+                        sub_select.set_visibility(sub_cb.value)
+
+                        def _toggle_sub_select() -> None:
+                            sub_select.set_visibility(sub_cb.value)
+
+                        sub_cb.on("update:model-value", _toggle_sub_select)
 
                 # ---- 下载按钮 ----
                 with ui.row().classes("w-full justify-end mt-2"):
@@ -553,6 +579,7 @@ def render() -> None:
                             sel,
                             thumb_cb.value,
                             sub_cb.value,
+                            sub_select.value,
                             on_done=lambda: dl_btn_ref["btn"].enable(),
                         )
 
@@ -571,6 +598,7 @@ def render() -> None:
         selected_formats: list[dict],
         write_thumbnail: bool = True,
         write_subtitles: bool = True,
+        subtitle_langs: list[str] | None = None,
         on_done: Callable | None = None,
     ) -> None:
         """下载选中的格式"""
@@ -619,6 +647,7 @@ def render() -> None:
                         cookie_file=c,
                         write_thumbnail=write_thumbnail,
                         write_subtitles=write_subtitles,
+                        subtitle_langs=subtitle_langs,
                         progress_callback=progress_callback,
                         download_id=did,
                     )

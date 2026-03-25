@@ -99,12 +99,22 @@ def _extract_sync(url: str, opts: dict) -> dict:
             }
         )
 
+    # 提取可用字幕语言，过滤非语言 key
+    _non_lang_keys = {"live_chat", "default", "asr_default"}
+    subtitles_dict = info.get("subtitles") or {}
+    auto_subs_dict = info.get("automatic_captions") or {}
+
+    subtitle_langs = sorted(k for k in subtitles_dict if k not in _non_lang_keys)
+    auto_subtitle_langs = sorted(k for k in auto_subs_dict if k not in _non_lang_keys)
+
     return {
         "title": info.get("title", "Unknown"),
         "thumbnail": info.get("thumbnail"),
         "duration": info.get("duration"),
         "formats": formats,
         "has_subtitles": bool(info.get("subtitles")),
+        "subtitle_langs": subtitle_langs,
+        "auto_subtitle_langs": auto_subtitle_langs,
     }
 
 
@@ -116,6 +126,7 @@ async def start_download(
     merge_format: bool = True,
     write_thumbnail: bool = False,
     write_subtitles: bool = False,
+    subtitle_langs: list[str] | None = None,
     progress_state: dict | None = None,
     download_id: int | None = None,
 ) -> str:
@@ -190,6 +201,10 @@ async def start_download(
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        # 重试与限速，避免 HTTP 429
+        "retries": 3,
+        "fragment_retries": 3,
+        "sleep_interval_requests": 1,
     }
 
     if cookie_file:
@@ -211,7 +226,7 @@ async def start_download(
     if write_subtitles:
         opts["writesubtitles"] = True
         opts["writeautomaticsub"] = True
-        opts["subtitleslangs"] = ["all"]
+        opts["subtitleslangs"] = subtitle_langs if subtitle_langs else ["all"]
 
     # 格式合并：需要 ffmpeg
     if merge_format and "+" in format_id:
