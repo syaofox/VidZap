@@ -47,12 +47,34 @@ docker compose up -d     # Production deployment
 docker compose build     # Rebuild image
 ```
 
-No test framework is configured yet. When adding tests, use `pytest` and run with `uv run pytest`.
+### Single-file commands
 
-For single-file lint/type-check:
+Lint/type-check specific files for faster feedback:
 ```bash
+# Lint single file
 uv run ruff check src/core/download_queue.py
-uv run mypy src/pages/history.py
+uv run ruff check src/pages/history.py
+
+# Type-check single file
+uv run mypy src/core/ytdlp_handler.py
+uv run mypy src/pages/settings.py
+```
+
+### Testing
+
+No test framework is configured yet. When adding tests:
+```bash
+# Install pytest
+uv add --dev pytest
+
+# Run all tests
+uv run pytest
+
+# Run specific test file
+uv run pytest tests/test_download_queue.py
+
+# Run tests matching a pattern
+uv run pytest -k "download"
 ```
 
 ## Code style
@@ -62,6 +84,7 @@ uv run mypy src/pages/history.py
 - Target Python 3.13. Use modern syntax: `str | None` (not `Optional[str]`), `dict` (not `Dict`), `list` (not `List`).
 - Line length: 100 characters (ruff config in `pyproject.toml`).
 - Ruff rules: `E`, `F`, `I`, `N`, `W`, `UP` (pyupgrade).
+- Enable PyCharm/VSCode inspection for `from __future__ import annotations` to avoid forward reference issues.
 
 ### Imports
 
@@ -76,6 +99,8 @@ uv run mypy src/pages/history.py
 
   from core.db import get_connection
   ```
+
+## Code style (continued)
 
 ### Naming
 
@@ -97,6 +122,13 @@ uv run mypy src/pages/history.py
 - Wrap I/O and external calls in try/except. Catch broad `Exception` for yt-dlp operations (it raises varied errors).
 - Use `finally` for cleanup (e.g., re-enabling UI buttons).
 - Print tracebacks with `traceback.print_exc()` for debugging server-side errors.
+
+### Security
+
+- Never log or expose secrets (API keys, tokens, passwords).
+- Cookie files stored in `cookies/` directory are user-specific; never commit them.
+- Use environment variables for configuration (`NICEVID_STORAGE_SECRET`, etc.).
+- Validate all user inputs before processing.
 
 ### NiceGUI patterns
 
