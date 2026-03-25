@@ -152,7 +152,9 @@ def _render_list_card(rec: dict, dynamic_refs: dict) -> None:
                 ui.image(thumb).classes("w-32 h-20 object-cover rounded")
 
             with ui.column().classes("flex-1 min-w-0"):
-                ui.label(short_title).classes("text-body1 font-medium")
+                ui.link(short_title, rec.get("url", ""), new_tab=True).classes(
+                    "text-body1 font-medium text-grey-9 no-underline hover:text-primary"
+                )
                 ui.label(rec.get("url", "")).classes("text-caption text-grey truncate w-full")
                 with ui.row().classes("items-center gap-2 mt-1"):
                     status_label = ui.label(f"{icon} {label_text}").classes(
@@ -212,7 +214,9 @@ def _render_grid_card(rec: dict, dynamic_refs: dict) -> None:
             ui.label("").classes("w-full h-40 bg-grey-3")
 
         with ui.column().classes("p-3 gap-1"):
-            ui.label(short_title).classes("text-body2 font-medium line-clamp-2")
+            ui.link(short_title, rec.get("url", ""), new_tab=True).classes(
+                "text-body2 font-medium text-grey-9 no-underline hover:text-primary line-clamp-2"
+            )
             with ui.row().classes("items-center gap-1"):
                 status_label = ui.label(f"{icon} {label_text}").classes(
                     f"{color_class} text-caption"
