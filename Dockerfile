@@ -17,7 +17,7 @@ RUN mkdir -p src/core src/pages src/components && \
 FROM python:3.13-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg gosu && \
+    apt-get install -y --no-install-recommends ffmpeg gosu xvfb && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /root/.local/bin/uv /root/.local/bin/uv
@@ -28,6 +28,10 @@ WORKDIR /app
 
 COPY src/ src/
 COPY pyproject.toml ./
+
+# Install Playwright Chromium browser and its system dependencies
+RUN playwright install chromium && \
+    playwright install-deps chromium
 
 RUN groupadd -g 1000 nicevid && \
     useradd -u 1000 -g nicevid -m nicevid && \

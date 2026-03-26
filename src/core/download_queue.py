@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,7 @@ class DownloadTask:
     subtitle_langs: list[str] | None
     progress_callback: Callable[[float, str, str], None] | None
     download_id: int | None
+    task_type: str = field(default="video")  # "video" or "douyin_note"
 
 
 class DownloadQueue:
@@ -47,6 +48,7 @@ class DownloadQueue:
         subtitle_langs: list[str] | None = None,
         progress_callback: Callable[[float, str, str], None] | None = None,
         download_id: int | None = None,
+        task_type: str = "video",
     ) -> None:
         origin = self._get_origin(url)
         task = DownloadTask(
@@ -58,6 +60,7 @@ class DownloadQueue:
             subtitle_langs=subtitle_langs,
             progress_callback=progress_callback,
             download_id=download_id,
+            task_type=task_type,
         )
 
         async with self._lock:
@@ -100,17 +103,28 @@ class DownloadQueue:
                 self._active_tasks[did] = task
 
             try:
-                await start_download(
-                    url=task.url,
-                    format_id=task.format_id,
-                    cookie_file=task.cookie_file,
-                    write_thumbnail=task.write_thumbnail,
-                    write_subtitles=task.write_subtitles,
-                    subtitle_langs=task.subtitle_langs,
-                    progress_callback=task.progress_callback,
-                    download_id=task.download_id,
-                    cancel_event=cancel_event,
-                )
+                if task.task_type == "douyin_note":
+                    from core.douyin_note import download_note_images
+
+                    await download_note_images(
+                        url=task.url,
+                        cookie_file=task.cookie_file,
+                        progress_callback=task.progress_callback,
+                        cancel_event=cancel_event,
+                        download_id=task.download_id,
+                    )
+                else:
+                    await start_download(
+                        url=task.url,
+                        format_id=task.format_id,
+                        cookie_file=task.cookie_file,
+                        write_thumbnail=task.write_thumbnail,
+                        write_subtitles=task.write_subtitles,
+                        subtitle_langs=task.subtitle_langs,
+                        progress_callback=task.progress_callback,
+                        download_id=task.download_id,
+                        cancel_event=cancel_event,
+                    )
             except DownloadCancelledError:
                 logger.info("Download cancelled for %s", task.url)
             except Exception:

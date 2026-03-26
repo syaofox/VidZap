@@ -2,7 +2,7 @@
 
 ## Project overview
 
-NiceVid is a Python 3.13 web application for downloading videos via yt-dlp, built with NiceGUI (FastAPI-based). It supports multi-site video extraction, format selection, batch download, cookie management, and a download history page.
+NiceVid is a Python 3.13 web application for downloading videos via yt-dlp, built with NiceGUI (FastAPI-based). It supports multi-site video extraction, format selection, batch download, cookie management, Douyin note (image+video slideshow) extraction via Playwright, and a download history page.
 
 ## Project structure
 
@@ -14,6 +14,7 @@ src/
     ytdlp_handler.py      # yt-dlp wrapper: extract_info, start_download, format logic
     cookie_manager.py     # Cookie file + DB management per domain
     download_queue.py     # Download queue: same-origin sequential, cross-origin parallel
+    douyin_note.py        # Douyin note extraction (Playwright + Xvfb) and download
     version.py            # App version from pyproject.toml
   pages/
     home.py               # Main page: URL input, analysis, format selection, download
@@ -27,151 +28,86 @@ Runtime artifacts: `database.sqlite`, `downloads/`, `cookies/`, `.nicegui/` — 
 ## Commands
 
 ```bash
-# Run the app
-uv run python src/main.py
-
-# Lint (ruff)
-make lint                # or: uv run ruff check .
-
-# Format (ruff)
-make format              # or: uv run ruff format .
-
-# Type check (mypy)
-make type-check          # or: uv run mypy .
-
-# Sync dependencies
-make sync                # or: uv run sync
-
-# Docker
-docker compose up -d     # Production deployment
-docker compose build     # Rebuild image
+uv run python src/main.py        # Run the app
+make lint                         # or: uv run ruff check .
+make format                       # or: uv run ruff format .
+make type-check                   # or: uv run mypy .
+make sync                         # or: uv run sync
+make playwright-setup             # Install Chromium + system deps (devcontainer)
+make post-start                   # Start Xvfb :99 (devcontainer)
+docker compose up -d              # Production deployment
+docker compose build              # Rebuild image
 ```
 
-### Single-file commands
-
-Lint/type-check specific files for faster feedback:
+Single-file lint/type-check for faster feedback:
 ```bash
-# Lint single file
-uv run ruff check src/core/download_queue.py
-uv run ruff check src/pages/history.py
-
-# Type-check single file
-uv run mypy src/core/ytdlp_handler.py
-uv run mypy src/pages/settings.py
+uv run ruff check src/core/douyin_note.py
+uv run mypy src/core/download_queue.py
 ```
 
-### Testing
-
-No test framework is configured yet. When adding tests:
-```bash
-# Install pytest
-uv add --dev pytest
-
-# Run all tests
-uv run pytest
-
-# Run specific test file
-uv run pytest tests/test_download_queue.py
-
-# Run tests matching a pattern
-uv run pytest -k "download"
-```
+Testing: No test framework configured yet. To add: `uv add --dev pytest` then `uv run pytest tests/`.
 
 ## Code style
 
-### Python version & syntax
+- **Python 3.13**: Use `str | None` (not `Optional`), `dict`/`list` (not `Dict`/`List`), `Callable` from `collections.abc`.
+- **Line length**: 100 chars. Ruff rules: `E`, `F`, `I`, `N`, `W`, `UP`.
+- **Imports**: stdlib → third-party → local (enforced by ruff `I`). Use absolute imports: `from core.db import get_connection`.
+- **Naming**: `snake_case` functions/variables, `UPPER_CASE` constants, `_prefix` private functions. Page modules export `render()`.
+- **Types**: Type hints on all function signatures. `dict | None` for optional params. mypy: `warn_return_any=true`, `disallow_untyped_defs=false`.
+- **Error handling**: try/except for I/O and external calls. Catch broad `Exception` for yt-dlp. Use `finally` for cleanup. Log tracebacks with `traceback.print_exc()`.
+- **Security**: Never log secrets. Cookie files are gitignored. Use env vars for config. Validate all user inputs.
 
-- Target Python 3.13. Use modern syntax: `str | None` (not `Optional[str]`), `dict` (not `Dict`), `list` (not `List`).
-- Line length: 100 characters (ruff config in `pyproject.toml`).
-- Ruff rules: `E`, `F`, `I`, `N`, `W`, `UP` (pyupgrade).
-- Enable PyCharm/VSCode inspection for `from __future__ import annotations` to avoid forward reference issues.
+## Key patterns
 
-### Imports
-
-- Order enforced by ruff `I` rule: stdlib → third-party → local.
-- Use absolute imports from `core` and `pages` (the `src/` dir is added to `sys.path` in `main.py`).
-- Example:
-  ```python
-  import os
-  from pathlib import Path
-
-  from nicegui import ui
-
-  from core.db import get_connection
-  ```
-
-## Code style (continued)
-
-### Naming
-
-- `snake_case` for functions, variables, module-level constants.
-- `UPPER_CASE` for module-level constants (e.g., `DOWNLOADS_DIR`, `DB_PATH`).
-- Private functions prefixed with `_` (e.g., `_extract_sync`, `_download_sync`).
-- NiceGUI page modules export a `render()` function.
-
-### Types
-
-- Add type hints to all function signatures (parameters and return types).
-- Use `dict | None` for optional parameters, not `Optional`.
-- `Callable` from `collections.abc`, not `typing`.
-- `dict` return types from SQLite: `list[dict]` via `[dict(row) for row in rows]`.
-- mypy configured with `warn_return_any=true`, `disallow_untyped_defs=false`.
-
-### Error handling
-
-- Wrap I/O and external calls in try/except. Catch broad `Exception` for yt-dlp operations (it raises varied errors).
-- Use `finally` for cleanup (e.g., re-enabling UI buttons).
-- Print tracebacks with `traceback.print_exc()` for debugging server-side errors.
-
-### Security
-
-- Never log or expose secrets (API keys, tokens, passwords).
-- Cookie files stored in `cookies/` directory are user-specific; never commit them.
-- Use environment variables for configuration (`NICEVID_STORAGE_SECRET`, etc.).
-- Validate all user inputs before processing.
-
-### NiceGUI patterns
-
-- UI built declaratively with context managers: `with ui.card():`, `with ui.row():`.
+### NiceGUI
+- Declarative UI with context managers: `with ui.card():`, `with ui.row():`.
 - Thread offloading: `asyncio.get_event_loop().run_in_executor(None, sync_fn)`.
-- Client storage: `app.storage.user[key]` with `storage_secret` set in `ui.run()`.
+- Client storage: `app.storage.user[key]` with `storage_secret` in `ui.run()`.
 - Timers: `ui.timer(interval, callback)` for polling; `.deactivate()` to stop.
-- Refreshable UI: `@ui.refreshable` decorator for auto-rebuilding sections.
+- Timer callbacks must check `ui.context.client._deleted` before modifying UI.
+- Dialogs: `ui.dialog()` + `ui.card()` context managers; do not use `dialog.on_submit`.
 
 ### Download concurrency
-
 - All downloads go through `core.download_queue.download_queue` (global singleton).
-- Same-origin downloads (same domain) run sequentially; different origins run in parallel with no limit.
-- Use `await download_queue.enqueue(...)` instead of calling `start_download` directly.
-- The queue manages `asyncio.Queue` per origin with dedicated worker coroutines.
-- **Cancellation**: `await download_queue.cancel(download_id)` sets an `asyncio.Event` that the yt-dlp progress hook checks; raising `DownloadCancelledError` to abort. The `finally` block in the worker cleans up tracking dicts.
-- Always pass a `progress_callback` when enqueueing retries so the history page progress bar updates (`_download_progress` dict).
+- Same-origin downloads run sequentially; different origins run in parallel.
+- Use `await download_queue.enqueue(...)` — never call `start_download` directly.
+- Cancellation: `await download_queue.cancel(download_id)` sets an `asyncio.Event`.
+- Always pass `progress_callback` when enqueueing retries for history page updates.
 
-### NiceGUI client lifecycle
-
-- Timer callbacks (e.g., `refresh_active`) must check `ui.context.client._deleted` before modifying UI; if deleted, deactivate the timer and return early. Wrap in `try/except` to handle missing context.
-- Confirmation dialogs: use `ui.dialog()` + `ui.card()` context managers with `on_click` buttons calling a helper; do not use `dialog.on_submit` (not available in NiceGUI 3.9).
+### Douyin note extraction (`douyin_note.py`)
+- Uses Playwright with Xvfb (non-headless) to avoid Douyin bot detection.
+- `_ensure_xvfb()` auto-starts Xvfb on `:99` and sets `DISPLAY` env var.
+- Visits Douyin homepage first to acquire fresh `__ac_signature` anti-bot cookies.
+- Intercepts API responses (`aweme_list`) for structured image+video data; falls back to DOM extraction.
+- `extract_note_images()` returns `image_urls` + `video_urls`.
+- `download_note_images()` downloads all media to a directory; `file_path` in DB is a directory (not file).
+- Uses `playwright-stealth` for additional anti-detection.
 
 ### Database
-
 - SQLite via `core.db.get_connection()` context manager (auto-commit, auto-close).
 - Schema changes: add `ALTER TABLE` in `init_db()` wrapped in try/except for idempotency.
-- Never commit `database.sqlite` — it's gitignored.
+
+## File serving
+
+The `/downloads-file/{download_id}/{filename:path}` route handles both single-file and directory downloads. When `file_path` is a directory (Douyin notes), it resolves `{filename}` inside it. Uses `mimetypes.guess_type()` for correct content-type headers.
 
 ## Deployment
 
-- Docker multi-stage build: `Dockerfile` uses `python:3.13-slim`, installs `ffmpeg` and `uv`.
-- Runtime runs as non-root user `nicevid` (UID 1000).
-- Environment variables: `NICEVID_DATA_DIR`, `NICEVID_STORAGE_SECRET`, `NICEVID_RELOAD`.
+- Docker multi-stage build: `python:3.13-slim`, installs `ffmpeg`, `xvfb`, `gosu`, Playwright Chromium.
+- Xvfb is auto-started by `entrypoint.sh` before the app.
+- Runs as non-root user `nicevid` (UID 1000).
+- Env vars: `NICEVID_DATA_DIR`, `NICEVID_STORAGE_SECRET`, `NICEVID_RELOAD`, `DISPLAY=:99`.
 - Volumes: `./downloads`, `./cookies`, `./data` mounted for persistence.
-- `docker compose up -d` for production; `docker compose build` to rebuild.
-- The `NICEVID_STORAGE_SECRET` value in `docker-compose.yml` must be changed before production use.
+- Change `NICEVID_STORAGE_SECRET` in `docker-compose.yml` before production use.
 
 ## Key dependencies
 
-| Package     | Purpose                          |
-|-------------|----------------------------------|
-| nicegui 3.9 | Web UI framework (Vue + Quasar)  |
-| yt-dlp      | Video extraction & download      |
-| fastapi     | HTTP routes (via NiceGUI)        |
-| pydantic    | Data validation                  |
+| Package            | Purpose                                |
+|--------------------|----------------------------------------|
+| nicegui 3.9        | Web UI framework (Vue + Quasar)        |
+| yt-dlp             | Video extraction & download            |
+| playwright         | Browser automation for Douyin notes    |
+| playwright-stealth | Anti-bot-detection for Playwright      |
+| httpx              | HTTP client for image/video downloads  |
+| fastapi            | HTTP routes (via NiceGUI)              |
+| pydantic           | Data validation                        |

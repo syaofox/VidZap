@@ -11,6 +11,9 @@ dependencies = [
     "yt-dlp",
     "pydantic",
     "python-multipart",
+    "playwright",
+    "httpx",
+    "playwright-stealth>=2.0.2",
 ]
 
 [project.optional-dependencies]

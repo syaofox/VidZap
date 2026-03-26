@@ -1,7 +1,17 @@
-.PHONY: post-create test-tools init sync lint format type-check gitignore freeze dev-tools ensure-ipykernel
+.PHONY: post-create post-start test-tools init sync lint format type-check gitignore freeze dev-tools ensure-ipykernel playwright-setup
 
 # Post-create command: run tool verification, init project, and sync dependencies
-post-create: test-tools init ensure-ipykernel sync
+post-create: test-tools init ensure-ipykernel sync playwright-setup
+
+# Post-start command: start Xvfb for non-headless Playwright (Douyin bot detection)
+post-start:
+	@echo "Starting Xvfb..."
+	@if pgrep -f "Xvfb :99" > /dev/null 2>&1; then \
+		echo "Xvfb already running on :99"; \
+	else \
+		Xvfb :99 -screen 0 1280x720x24 -nolisten tcp & \
+		sleep 1 && echo "✓ Xvfb started on :99"; \
+	fi
 
 # Initialize Python environment with uv and create pyproject.toml if needed
 init:
@@ -31,6 +41,13 @@ ensure-ipykernel:
 	else \
 		echo "Skipping ipykernel installation (INSTALL_IPYKERNEL != true)"; \
 	fi
+
+# Install Playwright Chromium and its system dependencies
+playwright-setup:
+	@echo "Installing Playwright Chromium..."
+	@(uv run playwright install chromium && \
+	uv run playwright install-deps chromium) > /tmp/playwright.log 2>&1
+	@echo "✓ Playwright Chromium installed (log: /tmp/playwright.log)"
 
 # Verify installed tools
 test-tools:

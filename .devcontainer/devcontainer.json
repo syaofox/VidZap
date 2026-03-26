@@ -27,8 +27,10 @@
     "UV_INIT_BARE": "false",
     "INSTALL_IPYKERNEL": "false",
     "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv",
-    "NICEVID_RELOAD": "true"
+    "NICEVID_RELOAD": "true",
+    "DISPLAY": ":99"
   },
   "postCreateCommand": "make post-create",
+  "postStartCommand": "make post-start",
   "mounts": []
 }

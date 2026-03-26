@@ -1,3 +1,4 @@
+import mimetypes
 import os
 import sys
 from pathlib import Path
@@ -24,19 +25,23 @@ if _data_dir:
 init_db()
 
 
-@app.get("/downloads-file/{download_id}/{filename}")
+@app.get("/downloads-file/{download_id}/{filename:path}")
 def serve_download_file(download_id: int, filename: str):
     """按下载记录 ID 提供文件下载/预览"""
     rec = get_download_by_id(download_id)
     if not rec or not rec.get("file_path"):
         return {"error": "记录不存在"}, 404
     file_path = Path(rec["file_path"])
+    # If file_path is a directory (e.g. douyin note downloads), resolve the file inside it
+    if file_path.is_dir():
+        file_path = file_path / filename
     if not file_path.is_file():
         return {"error": "文件不存在"}, 404
+    media_type, _ = mimetypes.guess_type(file_path.name)
     return FileResponse(
         str(file_path),
-        filename=filename,
-        media_type="application/octet-stream",
+        filename=file_path.name,
+        media_type=media_type or "application/octet-stream",
     )
 
 

@@ -62,6 +62,16 @@ report_tool mkdir
 report_tool rm
 echo
 
+echo "--- NiceVid Tools ---"
+report_tool Xvfb
+report_tool ffmpeg "ffmpeg -version"
+if [ -n "$DISPLAY" ]; then
+	echo "✅ DISPLAY: ${DISPLAY}"
+else
+	echo "❌ DISPLAY: not set"
+fi
+echo
+
 echo "=== Test Complete ==="
 
 # Final summary

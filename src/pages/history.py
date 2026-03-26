@@ -133,8 +133,9 @@ def render() -> None:
                             _render_actions(rec)
 
             if need_rebuild:
-                rebuild()
-                _start_timer()
+                auto_timer.deactivate()
+                ui.navigate.to("/history")
+                return
             elif active_count == 0:
                 auto_timer.deactivate()
         except Exception:
@@ -180,7 +181,9 @@ def _render_list_card(rec: dict, dynamic_refs: dict) -> None:
                     status_label = ui.label(f"{icon} {label_text}").classes(
                         f"{color_class} text-body2"
                     )
-                    if rec.get("format_id"):
+                    if rec.get("format_id") == "images":
+                        ui.label("类型: 图片").classes("text-caption text-grey")
+                    elif rec.get("format_id"):
                         ui.label(f"格式: {rec['format_id']}").classes("text-caption text-grey")
                     if rec.get("created_at"):
                         ui.label(rec["created_at"]).classes("text-caption text-grey")
@@ -280,7 +283,8 @@ def _render_actions(rec: dict) -> None:
     """渲染操作按钮（根据当前状态）"""
     status = rec["status"]
     file_path = rec.get("file_path") or ""
-    file_exists = file_path and os.path.isfile(file_path)
+    is_note = rec.get("format_id") == "images"
+    file_exists = file_path and (os.path.isfile(file_path) or os.path.isdir(file_path))
 
     if status in ("pending", "downloading"):
         ui.button(
@@ -297,16 +301,23 @@ def _render_actions(rec: dict) -> None:
         ).props("size=sm flat color=primary")
 
     if status == "completed" and file_exists:
-        ui.button(
-            "预览",
-            icon="play_circle",
-            on_click=lambda r=rec: _preview(r),
-        ).props("size=sm flat color=primary")
-        ui.button(
-            "取回本地",
-            icon="download",
-            on_click=lambda r=rec: _save_local(r),
-        ).props("size=sm flat color=positive")
+        if is_note:
+            ui.button(
+                "查看图片",
+                icon="photo_library",
+                on_click=lambda r=rec: _preview_note(r),
+            ).props("size=sm flat color=primary")
+        else:
+            ui.button(
+                "预览",
+                icon="play_circle",
+                on_click=lambda r=rec: _preview(r),
+            ).props("size=sm flat color=primary")
+            ui.button(
+                "取回本地",
+                icon="download",
+                on_click=lambda r=rec: _save_local(r),
+            ).props("size=sm flat color=positive")
 
     ui.button(
         "删除",
@@ -330,12 +341,14 @@ async def _retry_download(rec: dict) -> None:
 
         return cb
 
+    is_note = rec.get("format_id") == "images"
     await download_queue.enqueue(
         url=rec["url"],
         format_id=rec["format_id"] or "best",
         cookie_file=get_cookie_for_url(rec["url"]),
         progress_callback=_make_callback(rec_id),
         download_id=rec_id,
+        task_type="douyin_note" if is_note else "video",
     )
 
     ui.notify("已重新开始下载", type="info")
@@ -362,6 +375,58 @@ def _preview(rec: dict) -> None:
                 ui.audio(file_url).classes("w-full")
             else:
                 ui.label(f"不支持预览此格式: {ext}")
+            with ui.row().classes("w-full justify-end mt-2 shrink-0"):
+                ui.button("关闭", on_click=dialog.close).props("flat")
+    dialog.open()
+
+
+def _preview_note(rec: dict) -> None:
+    """预览已下载的抖音图文（幻灯片）图片和视频"""
+    file_path = rec.get("file_path") or ""
+    if not file_path or not os.path.isdir(file_path):
+        ui.notify("目录不存在", type="warning")
+        return
+
+    # List media files in the directory
+    image_exts = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".bmp"}
+    video_exts = {".mp4", ".webm", ".mov", ".mkv"}
+    images = sorted(
+        [f for f in Path(file_path).iterdir() if f.is_file() and f.suffix.lower() in image_exts]
+    )
+    videos = sorted(
+        [f for f in Path(file_path).iterdir() if f.is_file() and f.suffix.lower() in video_exts]
+    )
+
+    if not images and not videos:
+        ui.notify("目录中没有找到媒体文件", type="warning")
+        return
+
+    title = rec.get("title") or os.path.basename(file_path)
+    parts = []
+    if images:
+        parts.append(f"{len(images)} 张图片")
+    if videos:
+        parts.append(f"{len(videos)} 个视频")
+
+    with ui.dialog() as dialog:
+        with ui.card().classes("w-[90vw] h-[90vh] flex flex-col"):
+            ui.label(f"{title} ({' + '.join(parts)})").classes("text-h6 mb-2 shrink-0")
+            with ui.scroll_area().classes("flex-1 min-h-0"):
+                with ui.row().classes("w-full gap-2 flex-wrap"):
+                    for img_path in images:
+                        file_url = f"/downloads-file/{rec['id']}/{img_path.name}"
+                        img = ui.image(file_url).classes(
+                            "w-48 h-48 object-cover rounded cursor-pointer"
+                        )
+
+                        def _open_img(e=None, u=file_url):
+                            ui.navigate.to(u, new_tab=True)
+
+                        img.on("click", _open_img)
+                    for vid_path in videos:
+                        file_url = f"/downloads-file/{rec['id']}/{vid_path.name}"
+                        with ui.card().classes("w-64 p-2"):
+                            ui.video(file_url).classes("w-full rounded")
             with ui.row().classes("w-full justify-end mt-2 shrink-0"):
                 ui.button("关闭", on_click=dialog.close).props("flat")
     dialog.open()

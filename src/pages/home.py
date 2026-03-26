@@ -4,6 +4,7 @@ from collections.abc import Callable
 from nicegui import ui
 
 from core.cookie_manager import get_cookie_for_url
+from core.douyin_note import extract_note_images, is_douyin_note_url
 from core.download_queue import download_queue
 from core.version import get_app_version
 from core.ytdlp_handler import (
@@ -294,6 +295,54 @@ def render() -> None:
     # 存储分析结果
     analysis_result: dict = {"info": None, "urls": []}
 
+    async def download_note(on_done: Callable | None = None) -> None:
+        """下载抖音图文（幻灯片）的所有图片"""
+        urls = analysis_result["urls"]
+        if not urls:
+            ui.notify("请先分析链接", type="warning")
+            return
+
+        info = analysis_result.get("info") or {}
+        from pages.history import _download_progress
+
+        for url in urls:
+            cookie = get_cookie_for_url(url)
+            dl_id = create_download_record(
+                url=url,
+                title=info.get("title", "Unknown"),
+                thumbnail=info.get("thumbnail", ""),
+                format_id="images",
+            )
+
+            def _make_callback(did: int):
+                def cb(percent: float, speed: str, eta: str) -> None:
+                    _download_progress[did] = {
+                        "percent": percent,
+                        "speed": speed,
+                        "eta": eta,
+                    }
+
+                return cb
+
+            await download_queue.enqueue(
+                url=url,
+                format_id="images",
+                cookie_file=cookie,
+                progress_callback=_make_callback(dl_id),
+                download_id=dl_id,
+                task_type="douyin_note",
+            )
+
+        if on_done:
+            on_done()
+
+        count = len(urls)
+        ui.notify(
+            f"已添加 {count} 个图文下载任务，请前往下载历史页面查看进度",
+            type="positive",
+            multi_line=True,
+        )
+
     async def analyze() -> None:
         """分析视频链接"""
         analyze_btn.disable()
@@ -320,9 +369,97 @@ def render() -> None:
             with info_card:
                 ui.spinner(size="lg")
                 ui.label("正在分析...").classes("ml-4")
+
             cookie = get_cookie_for_url(urls[0])
+
+            # 检测抖音图文（幻灯片）链接
+            if is_douyin_note_url(urls[0]):
+                note_info = await extract_note_images(urls[0], cookie)
+                analysis_result["info"] = note_info
+                analysis_result["is_note"] = True
+
+                info_card.clear()
+                with info_card:
+                    with ui.row().classes("w-full gap-4"):
+                        if note_info.get("thumbnail"):
+                            ui.image(note_info["thumbnail"]).classes("w-48 rounded")
+                        with ui.column().classes("flex-1"):
+                            ui.label(note_info["title"]).classes("text-h6")
+                            media_parts = []
+                            if note_info.get("image_count"):
+                                media_parts.append(f"{note_info['image_count']} 张图片")
+                            if note_info.get("video_count"):
+                                media_parts.append(f"{note_info['video_count']} 个视频")
+                            ui.label(f"共 {' + '.join(media_parts)}").classes(
+                                "text-body1 text-grey"
+                            )
+                            if len(urls) > 1:
+                                ui.label(f"批量模式：共 {len(urls)} 个链接").classes("text-caption")
+
+                # 图片预览 & 下载按钮
+                format_card.classes(remove="hidden")
+                format_card.clear()
+                with format_card:
+                    ui.label("图片预览").classes("text-h6 mb-2")
+                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                        for img_url in note_info["image_urls"]:
+                            img = ui.image(img_url).classes(
+                                "w-32 h-32 object-cover rounded cursor-pointer"
+                            )
+
+                            def _open_image(u=img_url):
+                                ui.navigate.to(u, new_tab=True)
+
+                            img.on("click", _open_image)
+
+                    with ui.row().classes("w-full justify-end mt-4"):
+                        dl_btn_ref: dict = {"btn": None}
+
+                        async def do_note_download() -> None:
+                            urls_to_check = analysis_result["urls"]
+                            duplicate_titles: list[str] = []
+                            for u in urls_to_check:
+                                existing = find_existing_download(u)
+                                if existing:
+                                    duplicate_titles.append(existing.get("title") or u[:60])
+
+                            if duplicate_titles:
+                                with ui.dialog() as dialog, ui.card():
+                                    ui.label("链接已存在于下载记录中").classes("text-h6")
+                                    for t in duplicate_titles:
+                                        ui.label(f"  · {t}").classes("text-body2")
+                                    with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                                        ui.button(
+                                            "放弃",
+                                            on_click=lambda: dialog.submit("cancel"),
+                                        ).props("flat")
+                                        ui.button(
+                                            "覆盖",
+                                            on_click=lambda: dialog.submit("overwrite"),
+                                        ).props("color=negative")
+                                choice = await dialog
+                                if choice != "overwrite":
+                                    dl_btn_ref["btn"].enable()
+                                    return
+                                for u in urls_to_check:
+                                    existing = find_existing_download(u)
+                                    if existing:
+                                        delete_download_record(existing["id"])
+
+                            dl_btn_ref["btn"].disable()
+                            await download_note(on_done=lambda: dl_btn_ref["btn"].enable())
+
+                        dl_btn_ref["btn"] = ui.button(
+                            f"下载全部图片 ({note_info['image_count']} 张)",
+                            on_click=do_note_download,
+                        ).props("color=positive push")
+
+                return
+
+            # 常规视频分析
             info = await extract_info(urls[0], cookie)
             analysis_result["info"] = info
+            analysis_result["is_note"] = False
 
             info_card.clear()
             with info_card:
@@ -552,7 +689,7 @@ def render() -> None:
 
                 # ---- 下载按钮 ----
                 with ui.row().classes("w-full justify-end mt-2"):
-                    dl_btn_ref: dict = {"btn": None}
+                    video_dl_btn_ref: dict = {"btn": None}
 
                     async def do_download() -> None:
                         if table_ref["table"] is not None:
@@ -584,7 +721,7 @@ def render() -> None:
                                     ).props("color=negative")
                             choice = await dialog
                             if choice != "overwrite":
-                                dl_btn_ref["btn"].enable()
+                                video_dl_btn_ref["btn"].enable()
                                 return
                             # 覆盖：删除旧记录
                             for u in urls_to_check:
@@ -592,20 +729,23 @@ def render() -> None:
                                 if existing:
                                     delete_download_record(existing["id"])
 
-                        dl_btn_ref["btn"].disable()
+                        video_dl_btn_ref["btn"].disable()
                         await download(
                             sel,
                             thumb_cb.value,
                             sub_cb.value,
                             sub_select.value,
-                            on_done=lambda: dl_btn_ref["btn"].enable(),
+                            on_done=lambda: video_dl_btn_ref["btn"].enable(),
                         )
 
-                    dl_btn_ref["btn"] = ui.button("下载选中格式", on_click=do_download).props(
+                    video_dl_btn_ref["btn"] = ui.button("下载选中格式", on_click=do_download).props(
                         "color=positive push"
                     )
 
         except Exception as e:
+            import traceback
+
+            traceback.print_exc()
             info_card.clear()
             with info_card:
                 ui.label(f"分析失败: {e!s}").classes("text-negative")
