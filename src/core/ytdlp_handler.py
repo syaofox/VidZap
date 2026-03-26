@@ -237,6 +237,7 @@ async def start_download(
         opts["writesubtitles"] = True
         opts["writeautomaticsub"] = True
         opts["subtitleslangs"] = subtitle_langs if subtitle_langs else ["all"]
+        opts["sleep_interval_subtitles"] = 1
 
     # 格式合并：需要 ffmpeg
     if merge_format and "+" in format_id:
@@ -277,6 +278,20 @@ def _is_format_error(e: Exception) -> bool:
     return "requested format is not available" in msg or "no video formats found" in msg
 
 
+def _is_subtitle_error(e: Exception) -> bool:
+    """判断异常是否是字幕下载错误（如 429 限流）"""
+    msg = str(e).lower()
+    return "unable to download video subtitles" in msg or "unable to download subtitles" in msg
+
+
+_SUBTITLE_KEYS = ("writesubtitles", "writeautomaticsub", "subtitleslangs")
+
+
+def _strip_subtitle_opts(opts: dict) -> dict:
+    """去掉字幕相关选项"""
+    return {k: v for k, v in opts.items() if k not in _SUBTITLE_KEYS}
+
+
 def _try_download(url: str, opts: dict) -> str:
     """执行一次下载尝试，返回文件路径"""
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -289,16 +304,18 @@ def _download_sync(url: str, opts: dict) -> str:
     """同步下载，自动降级重试。
 
     重试链：
-    1. cookie + 指定格式
-    2. cookie + 自动选择格式（格式不可用时）
-    3. 无 cookie + 指定格式
-    4. 无 cookie + 自动选择格式（最后手段）
+    1. cookie + 指定格式 + 字幕
+    2. cookie + 指定格式 + 无字幕（字幕下载失败时）
+    3. cookie + 自动选择格式（格式不可用时）
+    4. 无 cookie + 指定格式
+    5. 无 cookie + 自动选择格式（最后手段）
     """
     has_cookie = bool(opts.get("cookiefile"))
     has_format = "format" in opts
+    has_subtitles = bool(opts.get("writesubtitles"))
     last_error: Exception | None = None
 
-    # 尝试 1：原始 opts（cookie + format）
+    # 尝试 1：原始 opts（cookie + format + 字幕）
     try:
         return _try_download(url, opts)
     except DownloadCancelledError:
@@ -306,27 +323,40 @@ def _download_sync(url: str, opts: dict) -> str:
     except Exception as e:
         last_error = e
 
-    # 尝试 2：格式不可用 → 保持 cookie，去掉 format 自动选择
+    # 尝试 2：字幕下载失败（如 429 限流）→ 去掉字幕重试
+    if has_subtitles and _is_subtitle_error(last_error):
+        try:
+            return _try_download(url, _strip_subtitle_opts(opts))
+        except DownloadCancelledError:
+            raise
+        except Exception as e:
+            last_error = e
+
+    # 尝试 3：格式不可用 → 保持 cookie，去掉 format 自动选择
     if has_format and _is_format_error(last_error):
         try:
             fallback = {k: v for k, v in opts.items() if k not in ("format", "merge_output_format")}
+            if has_subtitles:
+                fallback = _strip_subtitle_opts(fallback)
             return _try_download(url, fallback)
         except DownloadCancelledError:
             raise
         except Exception as e:
             last_error = e
 
-    # 尝试 3：去掉 cookie，保持原 format
+    # 尝试 4：去掉 cookie，保持原 format
     if has_cookie:
         try:
             fallback = {k: v for k, v in opts.items() if k != "cookiefile"}
+            if has_subtitles and _is_subtitle_error(last_error):
+                fallback = _strip_subtitle_opts(fallback)
             return _try_download(url, fallback)
         except DownloadCancelledError:
             raise
         except Exception as e:
             last_error = e
 
-        # 尝试 4：去掉 cookie 且去掉 format（最后手段）
+        # 尝试 5：去掉 cookie 且去掉 format（最后手段）
         if has_format and _is_format_error(last_error):
             try:
                 fallback = {

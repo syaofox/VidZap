@@ -74,6 +74,20 @@ Testing: No test framework configured yet. To add: `uv add --dev pytest` then `u
 - Cancellation: `await download_queue.cancel(download_id)` sets an `asyncio.Event`.
 - Always pass `progress_callback` when enqueueing retries for history page updates.
 
+### Cookie domain normalization (`cookie_manager.py`)
+- `normalize_domain(domain)`: strips `www.` prefix, port, lowercases. `www.youtube.com:443` → `youtube.com`.
+- `extract_domain_from_input(text)`: accepts raw domain or full URL, returns normalized domain.
+- `is_valid_domain(domain)`: validates domain format (min 2 segments, valid chars).
+- `get_cookie_for_url(url)` normalizes the URL domain then matches with `.{domain}` suffix (subdomain-aware).
+- `save_cookie()` auto-normalizes before persisting.
+
+### Download retry chain (`ytdlp_handler.py`)
+- `_download_sync()` implements a 5-level fallback: cookie+format+subtitles → no subtitles → auto format → no cookie → no cookie+auto format.
+- `_is_format_error()`: detects "Requested format is not available".
+- `_is_subtitle_error()`: detects "Unable to download video subtitles" (429 rate limit).
+- `_strip_subtitle_opts()`: removes `writesubtitles`/`writeautomaticsub`/`subtitleslangs` from opts.
+- Subtitle downloads use `sleep_interval_subtitles = 1` (1s between each) to avoid 429.
+
 ### Douyin note extraction (`douyin_note.py`)
 - Uses Playwright with Xvfb (non-headless) to avoid Douyin bot detection.
 - `_ensure_xvfb()` auto-starts Xvfb on `:99` and sets `DISPLAY` env var.

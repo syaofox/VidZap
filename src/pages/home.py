@@ -651,41 +651,52 @@ def render() -> None:
                 toggle_label.on("click", toggle_table)
 
                 # ---- 下载选项 ----
-                all_langs = list(
-                    dict.fromkeys(
-                        (info.get("subtitle_langs") or []) + (info.get("auto_subtitle_langs") or [])
-                    )
-                )
-                default_langs = [lang for lang in all_langs if lang.startswith(("zh", "en"))]
+                manual_langs: list[str] = info.get("subtitle_langs") or []
+                auto_langs: list[str] = info.get("auto_subtitle_langs") or []
+                has_any_sub = bool(manual_langs or auto_langs)
+                # 只默认勾选手动字幕中的 zh/en，自动生成字幕默认不勾选（避免 429 限流）
+                default_manual = [lang for lang in manual_langs if lang.startswith(("zh", "en"))]
 
                 with ui.row().classes("w-full items-center mt-4 gap-4"):
                     thumb_cb = ui.checkbox("下载封面", value=True)
-                    sub_cb = ui.checkbox(
-                        "下载字幕",
-                        value=bool(all_langs),
-                    )
-                    sub_select = (
-                        ui.select(
-                            all_langs,
-                            multiple=True,
-                            label="选择字幕语言",
-                            value=default_langs,
-                        )
-                        .props("dense outlined use-chips")
-                        .classes("w-64")
-                    )
-                    if not all_langs:
-                        sub_cb.disable()
-                        sub_cb.set_value(False)
-                        sub_select.disable()
-                    else:
-                        # 联动：勾选字幕时启用选择器
-                        sub_select.set_visibility(sub_cb.value)
+                    sub_cb = ui.checkbox("下载字幕", value=False)
 
-                        def _toggle_sub_select() -> None:
-                            sub_select.set_visibility(sub_cb.value)
+                # 字幕语言复选框（按类型分组）
+                sub_options_container = ui.column().classes("w-full mt-1")
 
-                        sub_cb.on("update:model-value", _toggle_sub_select)
+                # 收集所有字幕复选框引用
+                sub_checkboxes: list[ui.checkbox] = []
+
+                with sub_options_container:
+                    if manual_langs:
+                        with ui.row().classes("w-full items-center gap-1 mb-1"):
+                            ui.icon("closed_caption", size="xs").classes("text-grey-7")
+                            ui.label("创作者上传字幕").classes("text-sm text-grey-7")
+                        with ui.row().classes("w-full gap-x-4 gap-y-1 ml-2"):
+                            for lang in manual_langs:
+                                cb = ui.checkbox(lang, value=lang in default_manual)
+                                sub_checkboxes.append(cb)
+
+                    if auto_langs:
+                        with (
+                            ui.expansion("自动生成字幕", icon="smart_display")
+                            .classes("w-full mt-2")
+                            .props("dense header-class=text-sm text-grey-7")
+                        ):
+                            with ui.row().classes("w-full gap-x-4 gap-y-1 mt-1"):
+                                for lang in auto_langs:
+                                    cb = ui.checkbox(lang, value=False)
+                                    sub_checkboxes.append(cb)
+
+                if not has_any_sub:
+                    sub_cb.disable()
+                    sub_cb.set_value(False)
+                sub_options_container.set_visibility(sub_cb.value)
+
+                def _toggle_sub_options() -> None:
+                    sub_options_container.set_visibility(sub_cb.value)
+
+                sub_cb.on("update:model-value", _toggle_sub_options)
 
                 # ---- 下载按钮 ----
                 with ui.row().classes("w-full justify-end mt-2"):
@@ -730,11 +741,12 @@ def render() -> None:
                                     delete_download_record(existing["id"])
 
                         video_dl_btn_ref["btn"].disable()
+                        selected_sub_langs = [cb.text for cb in sub_checkboxes if cb.value]
                         await download(
                             sel,
                             thumb_cb.value,
-                            sub_cb.value,
-                            sub_select.value,
+                            sub_cb.value and bool(selected_sub_langs),
+                            selected_sub_langs,
                             on_done=lambda: video_dl_btn_ref["btn"].enable(),
                         )
 
