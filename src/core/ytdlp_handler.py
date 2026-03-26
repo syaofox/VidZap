@@ -271,23 +271,77 @@ async def start_download(
     return file_path
 
 
+def _is_format_error(e: Exception) -> bool:
+    """判断异常是否是格式不可用错误"""
+    msg = str(e).lower()
+    return "requested format is not available" in msg or "no video formats found" in msg
+
+
+def _try_download(url: str, opts: dict) -> str:
+    """执行一次下载尝试，返回文件路径"""
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([url])
+        info = ydl.extract_info(url, download=False)
+        return str(ydl.prepare_filename(info))
+
+
 def _download_sync(url: str, opts: dict) -> str:
-    """同步下载，cookie 失败时自动降级重试"""
+    """同步下载，自动降级重试。
+
+    重试链：
+    1. cookie + 指定格式
+    2. cookie + 自动选择格式（格式不可用时）
+    3. 无 cookie + 指定格式
+    4. 无 cookie + 自动选择格式（最后手段）
+    """
+    has_cookie = bool(opts.get("cookiefile"))
+    has_format = "format" in opts
+    last_error: Exception | None = None
+
+    # 尝试 1：原始 opts（cookie + format）
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
-            info = ydl.extract_info(url, download=False)
-            return str(ydl.prepare_filename(info))
+        return _try_download(url, opts)
     except DownloadCancelledError:
         raise
-    except Exception:
-        if opts.get("cookiefile"):
+    except Exception as e:
+        last_error = e
+
+    # 尝试 2：格式不可用 → 保持 cookie，去掉 format 自动选择
+    if has_format and _is_format_error(last_error):
+        try:
+            fallback = {k: v for k, v in opts.items() if k not in ("format", "merge_output_format")}
+            return _try_download(url, fallback)
+        except DownloadCancelledError:
+            raise
+        except Exception as e:
+            last_error = e
+
+    # 尝试 3：去掉 cookie，保持原 format
+    if has_cookie:
+        try:
             fallback = {k: v for k, v in opts.items() if k != "cookiefile"}
-            with yt_dlp.YoutubeDL(fallback) as ydl:
-                ydl.download([url])
-                info = ydl.extract_info(url, download=False)
-                return str(ydl.prepare_filename(info))
-        raise
+            return _try_download(url, fallback)
+        except DownloadCancelledError:
+            raise
+        except Exception as e:
+            last_error = e
+
+        # 尝试 4：去掉 cookie 且去掉 format（最后手段）
+        if has_format and _is_format_error(last_error):
+            try:
+                fallback = {
+                    k: v
+                    for k, v in opts.items()
+                    if k not in ("cookiefile", "format", "merge_output_format")
+                }
+                return _try_download(url, fallback)
+            except DownloadCancelledError:
+                raise
+            except Exception as e:
+                last_error = e
+
+    assert last_error is not None
+    raise last_error
 
 
 def _cleanup_partial_files(url: str, opts: dict) -> None:
