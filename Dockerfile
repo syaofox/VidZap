@@ -30,6 +30,7 @@ COPY src/ src/
 COPY pyproject.toml ./
 
 # Install Playwright Chromium browser and its system dependencies
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
 RUN playwright install chromium && \
     playwright install-deps chromium
 
