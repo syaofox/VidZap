@@ -101,13 +101,85 @@ def get_cookie_for_url(url: str) -> str | None:
     return None
 
 
+def _is_netscape_format(content: str) -> bool:
+    """检查内容是否为 Netscape 格式的 Cookie 文件。
+
+    Netscape 格式每行包含 tab 分隔的 7 个字段：
+    domain, flag, path, secure, expiry, name, value
+    """
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 7:
+            return True
+    return False
+
+
+def _raw_to_netscape(content: str, domain: str) -> str:
+    """将原始 HTTP Cookie 字符串转为 Netscape 格式。
+
+    输入:  "name1=val1; name2=val2"
+    输出:  Netscape 格式的多行文本
+    """
+    import time
+
+    lines = ["# Netscape HTTP Cookie File"]
+    # 去掉常见前缀
+    text = content.strip()
+    if text.startswith("Cookie:"):
+        text = text[7:].strip()
+    text = text.strip()
+    if text.startswith('"') and text.endswith('"'):
+        text = text[1:-1]
+
+    for pair in text.split(";"):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        name, value = pair.split("=", 1)
+        # 去掉引号
+        value = value.strip().strip('"').strip("'")
+        expiry = str(int(time.time()) + 365 * 86400)
+        parts = [
+            f".{domain}",
+            "TRUE",
+            "/",
+            "FALSE",
+            expiry,
+            name,
+            value,
+        ]
+        lines.append("\t".join(parts))
+    return "\n".join(lines) + "\n"
+
+
+def _normalize_cookie_content(content: str, domain: str) -> str:
+    """将 Cookie 内容转为 yt-dlp 兼容的 Netscape 格式。
+
+    支持输入格式：
+    1. Netscape 格式（原样返回）
+    2. 原始 HTTP Cookie 字符串（name=value; name=value — 自动转换）
+    """
+    if _is_netscape_format(content):
+        return content
+    # 尝试作为原始 HTTP Cookie 字符串解析
+    converted = _raw_to_netscape(content, domain)
+    if _is_netscape_format(converted):
+        return converted
+    return content
+
+
 def save_cookie(domain: str, cookie_content: str) -> bool:
     """保存 Cookie 到文件和数据库。
 
     domain 会被自动规范化（去掉 www.、端口，转小写）。
+    非 Netscape 格式的 Cookie 内容会自动转换。
     """
     init_cookie_dir()
     domain = normalize_domain(domain)
+    cookie_content = _normalize_cookie_content(cookie_content, domain)
     cookie_file = COOKIES_DIR / f"{domain}.txt"
     cookie_file.write_text(cookie_content)
 

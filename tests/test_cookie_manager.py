@@ -2,6 +2,9 @@
 import pytest
 
 from core.cookie_manager import (
+    _is_netscape_format,
+    _normalize_cookie_content,
+    _raw_to_netscape,
     delete_cookie,
     extract_domain_from_input,
     get_cookie_for_url,
@@ -229,3 +232,124 @@ class TestGetCookieForUrl:
         """带 userinfo 的 URL 也能正确提取域名。"""
         result = get_cookie_for_url("https://user:pass@youtube.com/watch?v=abc")
         assert result is None  # 没有保存 cookie, 返回 None
+
+
+# =============================================================================
+# Cookie 格式转换测试
+# =============================================================================
+
+
+class TestIsNetscapeFormat:
+    def test_recognizes_netscape_format(self):
+        content = (
+            "# Netscape HTTP Cookie File\n"
+            ".youtube.com\tTRUE\t/\tFALSE\t1712345678\tname\tvalue\n"
+        )
+        assert _is_netscape_format(content) is True
+
+    def test_rejects_raw_http_cookie(self):
+        content = "name1=val1; name2=val2"
+        assert _is_netscape_format(content) is False
+
+    def test_rejects_empty_string(self):
+        assert _is_netscape_format("") is False
+
+    def test_rejects_single_value(self):
+        content = "name=value"
+        assert _is_netscape_format(content) is False
+
+
+class TestRawToNetscape:
+    def test_converts_basic_cookie(self):
+        result = _raw_to_netscape("name1=val1; name2=val2", "example.com")
+        assert ".example.com" in result
+        assert "name1" in result
+        assert "name2" in result
+        assert result.startswith("# Netscape HTTP Cookie File\n")
+
+    def test_strips_cookie_prefix(self):
+        result = _raw_to_netscape("Cookie: session=abc123", "example.com")
+        assert "session" in result
+        assert "abc123" in result
+
+    def test_removes_quotes_from_values(self):
+        """原始 Cookie 中的引号应被去除。"""
+        result = _raw_to_netscape('session="abc123"', "example.com")
+        assert "abc123" in result
+        assert '"abc123"' not in result
+
+    def test_handles_empty_pairs(self):
+        """空的分号段应被忽略。"""
+        result = _raw_to_netscape("a=1;;b=2;", "example.com")
+        assert "a" in result
+        assert "b" in result
+
+    def test_uses_std_expiry(self):
+        """生成的 Cookie 应有合理过期时间（当前时间 + 1年）。"""
+        import time
+
+        result = _raw_to_netscape("a=1", "example.com")
+        now = int(time.time())
+        lines = result.strip().splitlines()
+        for line in lines:
+            if line.startswith("#") or not line.strip():
+                continue
+            parts = line.split("\t")
+            expiry = int(parts[4])
+            expected_min = now + 364 * 86400
+            expected_max = now + 366 * 86400
+            assert expected_min <= expiry <= expected_max
+
+
+class TestNormalizeCookieContent:
+    def test_passes_through_netscape_format(self):
+        content = "# Netscape HTTP Cookie File\n.domain\tTRUE\t/\tFALSE\t0\tn\tv\n"
+        result = _normalize_cookie_content(content, "example.com")
+        assert result == content
+
+    def test_converts_raw_cookie(self):
+        result = _normalize_cookie_content("x=1; y=2", "example.com")
+        assert _is_netscape_format(result) is True
+        assert "x" in result
+        assert "y" in result
+
+    def test_preserves_netscape_from_cookie_extractor(self):
+        """从浏览器导出的 Netscape 格式应原样保留。"""
+        netscape = (
+            "# Netscape HTTP Cookie File\n"
+            ".youtube.com\tTRUE\t/\tFALSE\t1712345678\tTEST\tvalue\n"
+        )
+        result = _normalize_cookie_content(netscape, "youtube.com")
+        assert result == netscape
+
+    def test_real_douyin_cookie_string(self):
+        """模拟用户从浏览器复制粘贴的抖音 Cookie 字符串。"""
+        raw = "__ac_nonce=06a44f84f0; __ac_signature=_02B4Z6wo00f01xUfwg; ttwid=1%7Cabc123"
+        result = _normalize_cookie_content(raw, "douyin.com")
+        assert _is_netscape_format(result) is True
+        assert "__ac_nonce" in result
+        assert "__ac_signature" in result
+        assert "ttwid" in result
+
+
+class TestSaveCookieNormalization:
+    def test_save_converts_raw_cookie(self, tmp_path):
+        """save_cookie 应自动转换原始 Cookie 字符串。"""
+        import core.cookie_manager as cm
+
+        orig = cm.COOKIES_DIR
+        cm.COOKIES_DIR = tmp_path / "cookies"
+        init_cookie_dir()
+        init_db()
+
+        raw_cookie = "name1=val1; name2=val2"
+        save_cookie("example.com", raw_cookie)
+
+        saved_file = tmp_path / "cookies" / "example.com.txt"
+        assert saved_file.exists()
+        content = saved_file.read_text()
+        assert _is_netscape_format(content) is True
+        assert "name1" in content
+        assert "name2" in content
+
+        cm.COOKIES_DIR = orig
