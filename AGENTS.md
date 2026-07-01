@@ -47,6 +47,7 @@ MYPYPATH=src uv run mypy src/core/download_queue.py
 ```
 
 Testing: `uv run pytest tests/` (pytest is configured as a dev dependency). Test files go in `tests/test_*.py`.
+Coverage: `uv run coverage run --source=src -m pytest tests/ && uv run coverage report`
 
 ## Code style
 
