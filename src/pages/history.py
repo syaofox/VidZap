@@ -135,7 +135,9 @@ def render() -> None:
             if need_rebuild:
                 if auto_timer:
                     auto_timer.deactivate()
-                ui.navigate.to("/history")
+                records = get_download_history()
+                rebuild(records)
+                _start_timer()
                 return
             elif active_count == 0:
                 if auto_timer:
