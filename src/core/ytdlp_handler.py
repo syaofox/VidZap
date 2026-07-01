@@ -13,6 +13,7 @@ from core.db import get_connection
 logger = logging.getLogger(__name__)
 
 DOWNLOADS_DIR = Path("downloads")
+MAX_TITLE_LENGTH = 80
 
 
 class DownloadCancelledError(Exception):
@@ -205,9 +206,15 @@ async def start_download(
                     "eta": "下载出错",
                 }
 
+    outtmpl = str(
+        DOWNLOADS_DIR
+        / f"%(extractor)s/%(title).{MAX_TITLE_LENGTH}s"
+        / f"%(title).{MAX_TITLE_LENGTH}s.%(ext)s"
+    )
+
     opts: dict = {
         "progress_hooks": [hook],
-        "outtmpl": str(DOWNLOADS_DIR / "%(extractor)s/%(title)s/%(title)s.%(ext)s"),
+        "outtmpl": outtmpl,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,

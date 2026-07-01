@@ -21,6 +21,7 @@ src/
     history.py            # Download history with list/grid view, retry, preview
     settings.py           # Cookie management page
   components/             # (reserved for shared UI components)
+tests/                    # pytest tests: test_*.py
 ```
 
 Runtime artifacts: `database.sqlite`, `downloads/`, `cookies/`, `.nicegui/` — all gitignored.
@@ -45,7 +46,7 @@ uv run ruff check src/core/douyin_note.py
 uv run mypy src/core/download_queue.py
 ```
 
-Testing: No test framework configured yet. To add: `uv add --dev pytest` then `uv run pytest tests/`.
+Testing: `uv run pytest tests/` (pytest is configured as a dev dependency). Test files go in `tests/test_*.py`.
 
 ## Code style
 
@@ -87,6 +88,7 @@ Testing: No test framework configured yet. To add: `uv add --dev pytest` then `u
 - `_is_subtitle_error()`: detects "Unable to download video subtitles" (429 rate limit).
 - `_strip_subtitle_opts()`: removes `writesubtitles`/`writeautomaticsub`/`subtitleslangs` from opts.
 - Subtitle downloads use `sleep_interval_subtitles = 1` (1s between each) to avoid 429.
+- **Filename truncation**: `MAX_TITLE_LENGTH = 80` limits title in `outtmpl` to 80 chars via `%(title).80s`, preventing `ENAMETOOLONG` (Errno 36) on filesystems with `NAME_MAX=255`.
 
 ### Douyin note extraction (`douyin_note.py`)
 - Uses Playwright with Xvfb (non-headless) to avoid Douyin bot detection.
