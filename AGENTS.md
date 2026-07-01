@@ -1,8 +1,8 @@
-# AGENTS.md — NiceVid
+# AGENTS.md — VidZap
 
 ## Project overview
 
-NiceVid is a Python 3.13 web application for downloading videos via yt-dlp, built with NiceGUI (FastAPI-based). It supports multi-site video extraction, format selection, batch download, cookie management, Douyin note (image+video slideshow) extraction via Playwright, and a download history page.
+VidZap is a Python 3.13 web application for downloading videos via yt-dlp, built with NiceGUI (FastAPI-based). It supports multi-site video extraction, format selection, batch download, cookie management, Douyin note (image+video slideshow) extraction via Playwright, and a download history page.
 
 ## Project structure
 
@@ -113,9 +113,8 @@ The `/downloads-file/{download_id}/{filename:path}` route handles both single-fi
 
 - Docker multi-stage build: `python:3.13-slim`, installs `ffmpeg`, `xvfb`, `gosu`, Playwright Chromium.
 - Xvfb is auto-started by `entrypoint.sh` before the app.
-- Runs as non-root user `nicevid` (UID 1000).
+- Runs as non-root user `nicevid` (UID 1000, Docker only).
 - Env vars: `NICEVID_DATA_DIR`, `NICEVID_STORAGE_SECRET`, `NICEVID_RELOAD`, `DISPLAY=:99`.
-- Volumes: `./downloads`, `./cookies`, `./data` mounted for persistence.
 - Change `NICEVID_STORAGE_SECRET` in `docker-compose.yml` before production use.
 
 ## Key dependencies

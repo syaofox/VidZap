@@ -62,7 +62,7 @@ report_tool mkdir
 report_tool rm
 echo
 
-echo "--- NiceVid Tools ---"
+echo "--- VidZap Tools ---"
 report_tool Xvfb
 report_tool ffmpeg "ffmpeg -version"
 if [ -n "$DISPLAY" ]; then

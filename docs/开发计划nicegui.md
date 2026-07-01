@@ -1,5 +1,5 @@
 
-NiceVid —— 纯 Python 视频下载工具（NiceGUI + yt-dlp）**
+VidZap —— 纯 Python 视频下载工具（NiceGUI + yt-dlp）**
 
 一个**零 JS / 零 HTML / 零 CSS** 的现代化网页视频下载器，使用 **NiceGUI** 实现全 Python 前端，界面友好、实时进度丝滑，支持 Cookie 自动匹配、任意分辨率选择、一键下载保存。
 

@@ -29,7 +29,7 @@ def render() -> None:
     # 顶部导航
     with ui.header().classes("justify-between items-center"):
         with ui.row().classes("items-baseline gap-1"):
-            ui.label("NiceVid").classes("text-h4 text-white")
+            ui.label("VidZap").classes("text-h4 text-white")
             ui.label(f"v{get_app_version()}").classes("text-caption text-white/60")
         with ui.row():
             ui.button("首页", on_click=lambda: ui.navigate.to("/")).props("flat color=white")

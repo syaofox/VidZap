@@ -1,5 +1,5 @@
 [project]
-name = "nicevid"
+name = "vidzap"
 version = "0.1.4"
 description = "纯 Python 视频下载工具（NiceGUI + yt-dlp）"
 readme = "README.md"

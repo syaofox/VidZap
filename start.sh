@@ -19,7 +19,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${CYAN}╔════════════════════════════╗${NC}"
-echo -e "${CYAN}║     NiceVid 启动脚本       ║${NC}"
+echo -e "${CYAN}║     VidZap 启动脚本        ║${NC}"
 echo -e "${CYAN}╚════════════════════════════╝${NC}"
 echo ""
 

@@ -1,4 +1,4 @@
-# NiceVid
+# VidZap
 
 纯 Python 视频下载工具，基于 [NiceGUI](https://nicegui.io) + [yt-dlp](https://github.com/yt-dlp/yt-dlp)，提供 Web 界面操作。
 
@@ -27,7 +27,7 @@
 
 ```bash
 # 克隆项目
-git clone <repo-url> && cd nicevid
+git clone <repo-url> && cd vidzap
 
 # 安装依赖
 uv sync
