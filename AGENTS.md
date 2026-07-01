@@ -29,7 +29,8 @@ Runtime artifacts: `database.sqlite`, `downloads/`, `cookies/`, `.nicegui/` — 
 ## Commands
 
 ```bash
-uv run python src/main.py        # Run the app
+./start.sh                        # Run the app (推荐)
+uv run python src/main.py        # Run the app（不通过脚本）
 make lint                         # or: uv run ruff check .
 make format                       # or: uv run ruff format .
 make type-check                   # or: MYPYPATH=src uv run mypy .
