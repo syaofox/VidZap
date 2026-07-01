@@ -14,7 +14,8 @@ src/
     ytdlp_handler.py      # yt-dlp wrapper: extract_info, start_download, format logic
     cookie_manager.py     # Cookie file + DB management per domain
     download_queue.py     # Download queue: same-origin sequential, cross-origin parallel
-    douyin_note.py        # Douyin note extraction (Playwright + Xvfb) and download
+    browser_extractor.py  # NoteExtractor ABC, Playwright + CloakBrowser implementations
+    douyin_note.py        # Douyin note extraction and download
     version.py            # App version from pyproject.toml
   pages/
     home.py               # Main page: URL input, analysis, format selection, download
@@ -92,14 +93,15 @@ Coverage: `uv run coverage run --source=src -m pytest tests/ && uv run coverage 
 - Subtitle downloads use `sleep_interval_subtitles = 1` (1s between each) to avoid 429.
 - **Filename truncation**: `MAX_TITLE_LENGTH = 80` limits title in `outtmpl` to 80 chars via `%(title).80s`, preventing `ENAMETOOLONG` (Errno 36) on filesystems with `NAME_MAX=255`.
 
-### Douyin note extraction (`douyin_note.py`)
-- Uses Playwright with Xvfb (non-headless) to avoid Douyin bot detection.
+### Douyin note extraction (`browser_extractor.py` + `douyin_note.py`)
+- `NoteExtractor` ABC defines the interface; `PlaywrightNoteExtractor` is the current impl, `CloakBrowserNoteExtractor` is a placeholder.
+- Engine selection: `VIDZAP_BROWSER=playwright` (default) or `VIDZAP_BROWSER=cloakbrowser` (future).
+- `PlaywrightNoteExtractor` uses Playwright with Xvfb (non-headless) + `playwright-stealth`.
 - `_ensure_xvfb()` auto-starts Xvfb on `:99` and sets `DISPLAY` env var.
 - Visits Douyin homepage first to acquire fresh `__ac_signature` anti-bot cookies.
 - Intercepts API responses (`aweme_list`) for structured image+video data; falls back to DOM extraction.
-- `extract_note_images()` returns `image_urls` + `video_urls`.
+- `extract_note_images()` in `douyin_note.py` is a thin wrapper around the active extractor.
 - `download_note_images()` downloads all media to a directory; `file_path` in DB is a directory (not file).
-- Uses `playwright-stealth` for additional anti-detection.
 
 ### Database
 - SQLite via `core.db.get_connection()` context manager (auto-commit, auto-close).
