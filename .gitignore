@@ -51,6 +51,12 @@ downloads/
 # Logs
 *.log
 
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+
 # OS
 .DS_Store
 Thumbs.db
