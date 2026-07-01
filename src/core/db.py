@@ -8,6 +8,10 @@ _DATA_DIR = Path(os.environ.get("NICEVID_DATA_DIR", "."))
 DB_PATH = _DATA_DIR / "database.sqlite"
 
 
+def _db_path() -> Path:
+    return Path(os.environ.get("NICEVID_DATA_DIR", ".")) / "database.sqlite"
+
+
 def init_db() -> None:
     """初始化数据库，创建表"""
     with get_connection() as conn:
@@ -49,7 +53,7 @@ def init_db() -> None:
 @contextmanager
 def get_connection() -> Iterator[sqlite3.Connection]:
     """获取数据库连接"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(_db_path())
     conn.row_factory = sqlite3.Row
     try:
         yield conn

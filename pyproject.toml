@@ -30,6 +30,8 @@ select = ["E", "F", "I", "N", "W", "UP"]
 dev = [
     "mypy>=1.19.1",
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.15.7",
 ]
 
