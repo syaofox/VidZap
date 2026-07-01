@@ -444,6 +444,7 @@ def create_download_record(url: str, title: str, thumbnail: str, format_id: str)
             """,
             (url, title, thumbnail, format_id),
         )
+        assert cur.lastrowid is not None
         return cur.lastrowid
 
 
@@ -506,6 +507,7 @@ def clear_completed_records() -> int:
     """清理所有已完成的下载记录，返回删除条数"""
     with get_connection() as conn:
         cur = conn.execute("DELETE FROM downloads WHERE status='completed'")
+        assert cur.rowcount is not None
         return cur.rowcount
 
 
@@ -537,7 +539,7 @@ async def batch_download(
 
 def get_ytdlp_version() -> str:
     """获取当前 yt-dlp 版本"""
-    return yt_dlp.version.__version__
+    return str(yt_dlp.version.__version__)
 
 
 def update_ytdlp() -> tuple[bool, str, bool]:

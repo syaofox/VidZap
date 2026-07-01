@@ -71,7 +71,7 @@ format:
 
 # Run mypy type checker
 type-check:
-	@uv run mypy .
+	@MYPYPATH=src uv run mypy .
 
 # Download Python .gitignore from GitHub
 gitignore:

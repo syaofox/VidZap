@@ -21,6 +21,11 @@ from core.ytdlp_handler import (
 
 def render() -> None:
     """渲染首页"""
+    # 前向声明: 在后续 with 语句中实际赋值
+    supported_sites_dialog: ui.dialog
+    all_sites_dialog: ui.dialog
+    update_btn: ui.button
+
     # 顶部导航
     with ui.header().classes("justify-between items-center"):
         with ui.row().classes("items-baseline gap-1"):
@@ -195,7 +200,7 @@ def render() -> None:
             ui.label("以上为常用网站，yt-dlp 实际支持更多站点").classes("text-caption text-grey")
             ui.button(
                 "查看全部",
-                on_click=lambda: (supported_sites_dialog.close(), all_sites_dialog.open()),
+                on_click=lambda: (supported_sites_dialog.close(), all_sites_dialog.open()),  # type: ignore[func-returns-value]
             ).props("flat dense size=sm color=primary")
         with ui.row().classes("w-full justify-between items-center mt-2"):
             ver_label = ui.label("yt-dlp 加载中...").classes("text-caption text-grey")

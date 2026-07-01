@@ -32,7 +32,7 @@ Runtime artifacts: `database.sqlite`, `downloads/`, `cookies/`, `.nicegui/` — 
 uv run python src/main.py        # Run the app
 make lint                         # or: uv run ruff check .
 make format                       # or: uv run ruff format .
-make type-check                   # or: uv run mypy .
+make type-check                   # or: MYPYPATH=src uv run mypy .
 make sync                         # or: uv run sync
 make playwright-setup             # Install Chromium + system deps (devcontainer)
 make post-start                   # Start Xvfb :99 (devcontainer)
@@ -43,7 +43,7 @@ docker compose build              # Rebuild image
 Single-file lint/type-check for faster feedback:
 ```bash
 uv run ruff check src/core/douyin_note.py
-uv run mypy src/core/download_queue.py
+MYPYPATH=src uv run mypy src/core/download_queue.py
 ```
 
 Testing: `uv run pytest tests/` (pytest is configured as a dev dependency). Test files go in `tests/test_*.py`.

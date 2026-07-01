@@ -133,11 +133,13 @@ def render() -> None:
                             _render_actions(rec)
 
             if need_rebuild:
-                auto_timer.deactivate()
+                if auto_timer:
+                    auto_timer.deactivate()
                 ui.navigate.to("/history")
                 return
             elif active_count == 0:
-                auto_timer.deactivate()
+                if auto_timer:
+                    auto_timer.deactivate()
         except Exception:
             pass
 
@@ -147,11 +149,11 @@ def render() -> None:
         nonlocal auto_timer
         if auto_timer:
             auto_timer.deactivate()
-        has_active = any(
-            get_download_by_id(rid)
-            and get_download_by_id(rid)["status"] in ("pending", "downloading")
-            for rid in dynamic_refs
-        )
+        def _is_active(rid: int) -> bool:
+            rec = get_download_by_id(rid)
+            return rec is not None and rec["status"] in ("pending", "downloading")
+
+        has_active = any(_is_active(rid) for rid in dynamic_refs)
         if has_active:
             auto_timer = ui.timer(2.0, refresh_active)
 
