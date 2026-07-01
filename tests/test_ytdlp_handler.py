@@ -20,6 +20,7 @@ from core.ytdlp_handler import (
     get_download_history,
     get_ytdlp_version,
     init_downloads_dir,
+    normalize_url,
     update_download_status,
 )
 
@@ -27,7 +28,43 @@ NAME_MAX = 255
 
 
 # =============================================================================
-# 路径截断测试 (已有)
+# URL 规范化测试
+# =============================================================================
+
+
+class TestNormalizeUrl:
+    @pytest.mark.parametrize(
+        ("input_url", "expected"),
+        [
+            (
+                "https://www.douyin.com/jingxuan?modal_id=7635097254491251362",
+                "https://www.douyin.com/video/7635097254491251362",
+            ),
+            (
+                "https://douyin.com/jingxuan?modal_id=12345",
+                "https://www.douyin.com/video/12345",
+            ),
+            # 不匹配的 URL 原样返回
+            ("https://www.youtube.com/watch?v=abc", "https://www.youtube.com/watch?v=abc"),
+            (
+                "https://www.douyin.com/video/7635097254491251362",
+                "https://www.douyin.com/video/7635097254491251362",
+            ),
+            (
+                "https://www.douyin.com/note/7635097254491251362",
+                "https://www.douyin.com/note/7635097254491251362",
+            ),
+            # 没有 modal_id 参数
+            ("https://www.douyin.com/jingxuan", "https://www.douyin.com/jingxuan"),
+            ("", ""),
+        ],
+    )
+    def test_normalization(self, input_url, expected):
+        assert normalize_url(input_url) == expected
+
+
+# =============================================================================
+# 路径截断测试
 # =============================================================================
 
 
@@ -191,9 +228,9 @@ class TestCheckFfmpeg:
 class TestInitDownloadsDir:
     def test_creates_directory(self, tmp_path):
         target = tmp_path / "downloads"
-        orig = DOWNLOADS_DIR
         import core.ytdlp_handler as mod
 
+        orig = mod.DOWNLOADS_DIR
         mod.DOWNLOADS_DIR = target
         init_downloads_dir()
         assert target.is_dir()

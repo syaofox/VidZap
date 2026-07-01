@@ -1,10 +1,12 @@
 import asyncio
 import logging
+import re
 import shutil
 import subprocess
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import yt_dlp
 
@@ -14,6 +16,33 @@ logger = logging.getLogger(__name__)
 
 DOWNLOADS_DIR = Path("downloads")
 MAX_TITLE_LENGTH = 80
+
+# Douyin URL 模式
+_DOUYIN_JINGXUAN_PATTERN = re.compile(
+    r"https?://(?:www\.)?douyin\.com/jingxuan"
+)
+
+# 已知不被 yt-dlp 直接支持的 Douyin URL 格式
+_UNSUPPORTED_DOUYIN_PATTERNS: list[re.Pattern] = [
+    _DOUYIN_JINGXUAN_PATTERN,
+]
+
+
+def normalize_url(url: str) -> str:
+    """规范化视频 URL，将 yt-dlp 不支持的格式转为标准格式。
+
+    已知转换:
+      https://www.douyin.com/jingxuan?modal_id=xxx
+        → https://www.douyin.com/video/xxx
+    """
+    for pattern in _UNSUPPORTED_DOUYIN_PATTERNS:
+        if pattern.match(url):
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            modal_ids = params.get("modal_id")
+            if modal_ids:
+                return f"https://www.douyin.com/video/{modal_ids[0]}"
+    return url
 
 
 class DownloadCancelledError(Exception):
@@ -59,6 +88,7 @@ def init_downloads_dir() -> None:
 
 async def extract_info(url: str, cookie_file: str | None = None) -> dict:
     """提取视频信息"""
+    url = normalize_url(url)
     opts: dict = {
         "quiet": True,
         "no_warnings": True,

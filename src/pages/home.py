@@ -760,12 +760,13 @@ def render() -> None:
                     )
 
         except Exception as e:
-            import traceback
-
-            traceback.print_exc()
             info_card.clear()
             with info_card:
-                ui.label(f"分析失败: {e!s}").classes("text-negative")
+                msg = str(e)
+                # 美化 yt-dlp 的 ERROR: 前缀
+                if msg.startswith("ERROR: "):
+                    msg = msg[7:]
+                ui.label(f"分析失败: {msg}").classes("text-negative")
         finally:
             analyze_btn.enable()
 
