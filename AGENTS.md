@@ -56,6 +56,7 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 - Playwright Chromium 安装路径：`/app/.cache/ms-playwright`（`PLAYWRIGHT_BROWSERS_PATH`）。
 - 数据持久化卷：`downloads/`（下载文件）、`cookies/`（Cookie 文件）、`data/`（SQLite DB + NiceGUI storage）。
 - Docker 构建分两阶段：builder 安装依赖 → final 复制 `.venv` + 源码 + Playwright。
+- 资源限制：`docker-compose.yml` 已配置 `mem_limit: 2g` + `cpus: "4"`。Playwright/Chromium 内存峰值可达 800MB，加上 ffmpeg 转码很容易超过 1G，2G 保证功能可用不频繁 OOM。NAS 环境不要移除或大幅调高此限制。
 
 ## 数据流
 

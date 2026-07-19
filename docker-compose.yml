@@ -15,3 +15,8 @@ services:
       - ./cookies:/app/cookies
       - ./data:/app/data
     restart: unless-stopped
+    # 资源限制：NAS 共享环境防止单容器拖垮整机
+    #   memory 2G — Playwright Chromium 峰值 800MB + ffmpeg 200MB + Python 100MB 足够
+    #   cpus 4    — yt-dlp/ffmpeg CPU 密集但不至于占满所有核心
+    mem_limit: 2g
+    cpus: "4"
