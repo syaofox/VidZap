@@ -26,13 +26,16 @@ ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH"
 
 WORKDIR /app
 
-COPY src/ src/
-COPY pyproject.toml ./
-
 # Install Playwright Chromium browser and its system dependencies
+# Done before copying source code to leverage Docker layer caching:
+# playwright only reinstalls when .venv (dependencies) change, not on code changes
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
 RUN playwright install chromium && \
     playwright install-deps chromium
+
+# Application source (changes most frequently, comes last for caching)
+COPY src/ src/
+COPY pyproject.toml ./
 
 RUN groupadd -g 1000 nicevid && \
     useradd -u 1000 -g nicevid -m nicevid && \
