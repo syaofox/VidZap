@@ -16,6 +16,7 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 ## 非源码可见约束
 
 - **Timer 内必须检查** `ui.context.client._deleted` 再操作 UI；否则已销毁页面崩溃。
+- **避免 `ui.timer(0.1, fn, once=True)` 做页面初始化** — 使用 `asyncio.ensure_future(fn())` 替代，消除 Timer 与父 slot 的生命周期绑定，防止 `_get_context` 因 slot 删除抛出 `RuntimeError`。
 - **Dialog 不要用** `dialog.on_submit` — 用 `ui.dialog()` + `ui.card()` context manager。
 - **不要直接调用** `start_download` / `download_note_images` — 全部通过 `download_queue.enqueue()`。
 - 重试时传 `progress_callback`，保证历史页面进度更新。
@@ -24,7 +25,7 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 - Page 模块导出 `render()` 函数供路由使用。
 - Cookie 目录通过 `get_cookie_dir()` 获取（`cookie_manager.py`），由 `VIDZAP_COOKIE_DIR` 环境变量控制，默认 `cookies/`。
 - DB 中 `cookie_file` 存相对路径 `{domain}.txt`，读取时通过 `_resolve_cookie_path()` 拼装绝对路径（`cookie_manager.py`）。
-- `save_cookie()` 返回 `False` 表示内容无效（无法解析为 Netscape 或原始 Cookie 格式），保存失败。
+- `save_cookie()` 返回 `False` 表示内容无效（无法解析为 Netscape 或原始 Cookie 格式），保存失败。UI 调用处必须检查返回值，返回 `False` 时提示用户而不是显示"保存成功"。
 - `_CancelledError` 统一在 `browser_extractor.py` 定义，`douyin_note.py` 从 `browser_extractor` 导入。
 - `PlaywrightNoteExtractor.extract()` 自动从 `cookie_file` 解析 Netscape Cookie 并通过 `context.add_cookies()` 注入。
 - `download_note_images()` 中 `httpx.AsyncClient` 自动从 `cookie_file` 提取 name=value 对作为默认 Cookie 发送。

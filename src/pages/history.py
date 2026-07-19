@@ -75,14 +75,18 @@ def render() -> None:
                     _render_list_card(rec, dynamic_refs)
 
     async def _load_and_rebuild() -> None:
+        if getattr(ui.context.client, "_deleted", False):
+            return
         records = await asyncio.get_event_loop().run_in_executor(None, get_download_history)
+        if getattr(ui.context.client, "_deleted", False):
+            return
         rebuild(records)
         _start_timer()
 
     def switch(mode: str) -> None:
         layout["mode"] = mode
         app.storage.user["history_layout"] = mode
-        ui.timer(0.1, _load_and_rebuild, once=True)
+        asyncio.ensure_future(_load_and_rebuild())
 
     def refresh_active() -> None:
         try:
@@ -159,7 +163,7 @@ def render() -> None:
         if has_active:
             auto_timer = ui.timer(2.0, refresh_active)
 
-    ui.timer(0.1, _load_and_rebuild, once=True)
+    asyncio.ensure_future(_load_and_rebuild())
 
 
 def _render_list_card(rec: dict, dynamic_refs: dict) -> None:

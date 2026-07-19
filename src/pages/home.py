@@ -206,10 +206,14 @@ def render() -> None:
             ver_label = ui.label("yt-dlp 加载中...").classes("text-caption text-grey")
 
             async def _load_version() -> None:
+                if getattr(ui.context.client, "_deleted", False):
+                    return
                 ver = await asyncio.get_event_loop().run_in_executor(None, get_ytdlp_version)
+                if getattr(ui.context.client, "_deleted", False):
+                    return
                 ver_label.text = f"yt-dlp {ver}"
 
-            ui.timer(0.1, _load_version, once=True)
+            asyncio.ensure_future(_load_version())
 
             async def _update_ytdlp() -> None:
                 update_btn.disable()
@@ -242,7 +246,11 @@ def render() -> None:
     sites_container: dict = {"container": None}
 
     async def _load_sites() -> None:
+        if getattr(ui.context.client, "_deleted", False):
+            return
         all_extractors = await asyncio.get_event_loop().run_in_executor(None, get_supported_sites)
+        if getattr(ui.context.client, "_deleted", False):
+            return
         sites_container["container"].clear()
         with sites_container["container"]:
             ui.label(f"共 {len(all_extractors)} 个提取器").classes("text-caption text-grey mb-2")
@@ -265,7 +273,7 @@ def render() -> None:
                     ui.spinner(size="sm")
                     ui.label("加载中...").classes("text-grey")
                 sites_container["container"] = ui.column().classes("gap-0 w-full")
-                all_sites_dialog.on("open", lambda: ui.timer(0.1, _load_sites, once=True))
+                all_sites_dialog.on("open", lambda: asyncio.ensure_future(_load_sites()))
         with ui.row().classes("w-full justify-end mt-2"):
             ui.button("关闭", on_click=all_sites_dialog.close).props("flat")
 

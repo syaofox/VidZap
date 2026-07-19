@@ -29,8 +29,12 @@ def render() -> None:
                 ui.label("加载中...").classes("text-grey")
 
         async def _load_cookies() -> None:
+            if getattr(ui.context.client, "_deleted", False):
+                return
             cookie_table_container.clear()
             rows = await asyncio.get_event_loop().run_in_executor(None, list_cookies)
+            if getattr(ui.context.client, "_deleted", False):
+                return
             cookie_table_ref["table"] = ui.table(
                 columns=[
                     {"name": "domain", "label": "域名", "field": "domain"},
@@ -46,7 +50,7 @@ def render() -> None:
                 ui.button("添加 Cookie", on_click=lambda: show_add_dialog()).props("color=primary")
                 ui.button("删除选中", on_click=lambda: delete_selected()).props("color=negative")
 
-        ui.timer(0.1, _load_cookies, once=True)
+        asyncio.ensure_future(_load_cookies())
 
     def show_add_dialog() -> None:
         """显示添加 Cookie 对话框"""
@@ -107,7 +111,12 @@ def render() -> None:
                         ui.notify(f"无效的域名格式：{domain}", type="negative")
                         return
 
-                    save_cookie(domain, cookie_content)
+                    if not save_cookie(domain, cookie_content):
+                        ui.notify(
+                            "Cookie 内容无效，无法解析为有效格式。请检查内容是否正确。",
+                            type="negative",
+                        )
+                        return
                     ui.notify(f"Cookie 已保存（{domain}）", type="positive")
                     dialog.close()
                     ui.navigate.to("/settings")
