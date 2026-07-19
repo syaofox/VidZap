@@ -18,6 +18,7 @@ class DownloadTask:
     progress_callback: Callable[[float, str, str], None] | None
     download_id: int | None
     task_type: str = field(default="video")  # "video" or "douyin_note"
+    note_info: dict | None = None  # pre-extracted note info to skip re-extraction
 
 
 class DownloadQueue:
@@ -49,6 +50,7 @@ class DownloadQueue:
         progress_callback: Callable[[float, str, str], None] | None = None,
         download_id: int | None = None,
         task_type: str = "video",
+        note_info: dict | None = None,
     ) -> None:
         origin = self._get_origin(url)
         task = DownloadTask(
@@ -61,6 +63,7 @@ class DownloadQueue:
             progress_callback=progress_callback,
             download_id=download_id,
             task_type=task_type,
+            note_info=note_info,
         )
 
         async with self._lock:
@@ -114,6 +117,7 @@ class DownloadQueue:
                         progress_callback=task.progress_callback,
                         cancel_event=cancel_event,
                         download_id=task.download_id,
+                        note_info=task.note_info,
                     )
                 else:
                     await start_download(

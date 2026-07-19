@@ -201,3 +201,41 @@ class TestDownloadTaskDataclass:
         )
         assert task.task_type == "douyin_note"
         assert task.download_id == 1
+
+    def test_note_info_default_none(self):
+        task = DownloadTask(
+            url="https://x.com/v",
+            format_id="best",
+            cookie_file=None,
+            write_thumbnail=False,
+            write_subtitles=False,
+            subtitle_langs=None,
+            progress_callback=None,
+            download_id=None,
+        )
+        assert task.note_info is None
+
+    def test_note_info_field(self):
+        info = {
+            "id": "123",
+            "title": "Test Note",
+            "thumbnail": "https://example.com/thumb.jpg",
+            "image_urls": ["https://example.com/img1.jpg"],
+            "image_count": 1,
+            "video_urls": [],
+            "video_count": 0,
+        }
+        task = DownloadTask(
+            url="https://douyin.com/note/123",
+            format_id="images",
+            cookie_file=None,
+            write_thumbnail=False,
+            write_subtitles=False,
+            subtitle_langs=None,
+            progress_callback=None,
+            download_id=1,
+            task_type="douyin_note",
+            note_info=info,
+        )
+        assert task.note_info == info
+        assert task.note_info["title"] == "Test Note"

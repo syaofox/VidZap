@@ -43,6 +43,7 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 - DB 中 `cookie_file` 存相对路径 `{domain}.txt`，读取时通过 `_resolve_cookie_path()` 拼装绝对路径（`cookie_manager.py`）。
 - `save_cookie()` 返回 `False` 表示内容无效（无法解析为 Netscape 或原始 Cookie 格式），保存失败。UI 调用处必须检查返回值，返回 `False` 时提示用户而不是显示"保存成功"。
 - `_CancelledError` 统一在 `browser_extractor.py` 定义，`douyin_note.py` 从 `browser_extractor` 导入。
+- **`note_info` 预提取优化**：`download_note_images()` 接受可选参数 `note_info: dict | None`，当已分析过时跳过二次 Playwright 提取。`home.py:download_note()` 从 `analysis_result["info"]` 取出后经 `DownloadTask.note_info` → `_worker()` 透传。**注意：仅单链接模式传 note_info，批量模式传 None**（批量时只分析了第一个 URL，其他 URL 需自动提取）。新增下载入口若没有预提取数据，传 `note_info=None` 即可走自动提取回退。
 - `PlaywrightNoteExtractor.extract()` 自动从 `cookie_file` 解析 Netscape Cookie 并通过 `context.add_cookies()` 注入。
 - `download_note_images()` 中 `httpx.AsyncClient` 自动从 `cookie_file` 提取 name=value 对作为默认 Cookie 发送。
 
@@ -61,6 +62,8 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 ```
 URL 输入 → extract_info() → 格式选择 → download_queue.enqueue() → _worker()
   ├─ "video" → start_download() → _download_sync() [5级降级重试] (yt-dlp cookiefile)
-  └─ "douyin_note" → download_note_images() → NoteExtractor.extract() (Playwright, 注入 cookie)
-                                             → httpx 下载 (注入 cookie)
+  └─ "douyin_note" → download_note_images()
+                       ├─ note_info 已存在 → 跳过 Playwright，直接 httpx 下载 (注入 cookie)
+                       └─ note_info 不存在 → NoteExtractor.extract() (Playwright, 注入 cookie)
+                                            → httpx 下载 (注入 cookie)
 ```

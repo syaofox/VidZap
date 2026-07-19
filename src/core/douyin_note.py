@@ -76,8 +76,12 @@ async def download_note_images(
     progress_callback=None,
     cancel_event: asyncio.Event | None = None,
     download_id: int | None = None,
+    note_info: dict | None = None,
 ) -> str:
     """Download all images and videos from a Douyin note page.
+
+    If note_info is provided (pre-extracted), skip the expensive
+    Playwright extraction and reuse the existing data directly.
 
     Returns the path to the output directory.
     """
@@ -86,7 +90,10 @@ async def download_note_images(
         raise ValueError(f"Not a Douyin note URL: {url}")
     note_id = match.group(1)
 
-    info = await extract_note_images(url, cookie_file)
+    if note_info is not None:
+        info = note_info
+    else:
+        info = await extract_note_images(url, cookie_file)
     image_urls = info["image_urls"]
     video_urls = info.get("video_urls", [])
     title = info["title"]

@@ -340,6 +340,9 @@ def render() -> None:
 
                 return cb
 
+            # 单链接模式复用预提取 note_info 跳过 Playwright；
+            # 批量模式没有为每个 URL 单独提取过，传 None 让下载时自动提取
+            note_info_param = info if len(urls) == 1 else None
             await download_queue.enqueue(
                 url=url,
                 format_id="images",
@@ -347,6 +350,7 @@ def render() -> None:
                 progress_callback=_make_callback(dl_id),
                 download_id=dl_id,
                 task_type="douyin_note",
+                note_info=note_info_param,
             )
 
         if on_done:
