@@ -7,6 +7,7 @@ from core.cookie_manager import (
     _raw_to_netscape,
     delete_cookie,
     extract_domain_from_input,
+    get_cookie_dir,
     get_cookie_for_url,
     init_cookie_dir,
     is_valid_domain,
@@ -76,8 +77,8 @@ class TestIsValidDomain:
             ("-bad.com", False),
             ("bad-.com", False),
             ("has space.com", False),
-            ("a..b.com", False),  # empty label
-            ("a." + "x" * 64 + ".com", False),  # label > 63 chars
+            ("a..b.com", False),
+            ("a." + "x" * 64 + ".com", False),
         ],
     )
     def test_validity(self, domain, expected):
@@ -85,20 +86,24 @@ class TestIsValidDomain:
 
 
 # =============================================================================
-# init_cookie_dir
+# get_cookie_dir & init_cookie_dir
 # =============================================================================
 
 
-class TestInitCookieDir:
-    def test_creates_directory(self, tmp_path):
-        import core.cookie_manager as cm
+class TestCookieDir:
+    def test_default_dir(self):
+        assert str(get_cookie_dir()).endswith("cookies")
 
-        orig = cm.COOKIES_DIR
+    def test_env_var_override(self, monkeypatch, tmp_path):
+        target = tmp_path / "mycookies"
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(target))
+        assert str(get_cookie_dir()) == str(target)
+
+    def test_creates_directory(self, monkeypatch, tmp_path):
         target = tmp_path / "cookies"
-        cm.COOKIES_DIR = target
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(target))
         init_cookie_dir()
         assert target.is_dir()
-        cm.COOKIES_DIR = orig
 
 
 # =============================================================================
@@ -111,55 +116,62 @@ class TestCookieRoundtrip:
         init_db()
         init_cookie_dir()
 
-    def test_save_and_list(self, tmp_path):
-        import core.cookie_manager as cm
+    def test_save_and_list(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
 
-        orig = cm.COOKIES_DIR
-        cm.COOKIES_DIR = tmp_path / "cookies"
-
-        saved = save_cookie("youtube.com", "NETSCAPE cookie content")
+        saved = save_cookie("youtube.com", "content=abc")
         assert saved is True
 
         cookies = list_cookies()
-        assert len(cookies) >= 1
         domains = [c["domain"] for c in cookies]
         assert "youtube.com" in domains
 
-        cm.COOKIES_DIR = orig
+    def test_save_duplicate_updates(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
 
-    def test_save_duplicate_updates(self, tmp_path):
-        import core.cookie_manager as cm
-
-        orig = cm.COOKIES_DIR
-        cm.COOKIES_DIR = tmp_path / "cookies"
-
-        save_cookie("youtube.com", "content1")
-        save_cookie("youtube.com", "content2")
+        save_cookie("youtube.com", "content=1")
+        save_cookie("youtube.com", "content=2")
         cookies = list_cookies()
 
         youtube_entries = [c for c in cookies if c["domain"] == "youtube.com"]
         assert len(youtube_entries) == 1
 
-        cm.COOKIES_DIR = orig
+    def test_delete_cookie(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
 
-    def test_delete_cookie(self, tmp_path):
-        import core.cookie_manager as cm
-
-        orig = cm.COOKIES_DIR
-        cm.COOKIES_DIR = tmp_path / "cookies"
-
-        save_cookie("test.example.com", "content")
+        save_cookie("test.example.com", "content=abc")
         assert any(c["domain"] == "test.example.com" for c in list_cookies())
 
         deleted = delete_cookie("test.example.com")
         assert deleted is True
         assert not any(c["domain"] == "test.example.com" for c in list_cookies())
 
-        cm.COOKIES_DIR = orig
-
     def test_delete_nonexistent(self):
         result = delete_cookie("nonexistent.domain.com")
         assert result is True
+
+    def test_stores_relative_path(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+
+        save_cookie("example.com", "x=1")
+        cookies = list_cookies()
+        row = next(c for c in cookies if c["domain"] == "example.com")
+        assert row["cookie_file"] == "example.com.txt"
+
+    def test_save_invalid_content_returns_false(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+
+        result = save_cookie("example.com", "garbage that cannot parse")
+        assert result is False
+        # DB should not have a record
+        assert not any(c["domain"] == "example.com" for c in list_cookies())
+        # File should not exist on disk
+        assert not (tmp_path / "cookies" / "example.com.txt").exists()
 
 
 # =============================================================================
@@ -171,67 +183,69 @@ class TestGetCookieForUrl:
     def setup_method(self):
         init_db()
 
-    def test_exact_match(self, tmp_path):
-        import core.cookie_manager as cm
+    def test_exact_match(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
 
-        orig = cm.COOKIES_DIR
-        cm.COOKIES_DIR = tmp_path / "cookies"
-
-        save_cookie("youtube.com", "cookie_data")
+        save_cookie("youtube.com", "data=abc")
         result = get_cookie_for_url("https://www.youtube.com/watch?v=abc")
         assert result is not None
-        assert "youtube.com.txt" in result
+        assert result.endswith("youtube.com.txt")
 
-        cm.COOKIES_DIR = orig
+    def test_subdomain_match(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
 
-    def test_subdomain_match(self, tmp_path):
-        import core.cookie_manager as cm
-
-        orig = cm.COOKIES_DIR
-        cm.COOKIES_DIR = tmp_path / "cookies"
-
-        save_cookie("youtube.com", "cookie_data")
+        save_cookie("youtube.com", "data=abc")
         result = get_cookie_for_url("https://m.youtube.com/shorts/abc")
         assert result is not None
-
-        cm.COOKIES_DIR = orig
 
     def test_no_match_returns_none(self):
         result = get_cookie_for_url("https://unknown-site.example.com/video")
         assert result is None
 
-    def test_multiple_cookies_returns_correct(self, tmp_path):
-        import core.cookie_manager as cm
+    def test_multiple_cookies_returns_correct(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
 
-        orig = cm.COOKIES_DIR
-        cm.COOKIES_DIR = tmp_path / "cookies"
-
-        save_cookie("bilibili.com", "bilibili_data")
-        save_cookie("youtube.com", "youtube_data")
+        save_cookie("bilibili.com", "data=bili")
+        save_cookie("youtube.com", "data=yt")
         result = get_cookie_for_url("https://www.youtube.com/watch?v=abc")
         assert result is not None
         assert "youtube" in result
 
-        cm.COOKIES_DIR = orig
+    def test_reverse_subdomain_match(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
 
-    def test_reverse_subdomain_match(self, tmp_path):
-        """反向匹配: youtube.com 匹配保存的 m.youtube.com cookie。"""
-        import core.cookie_manager as cm
-
-        orig = cm.COOKIES_DIR
-        cm.COOKIES_DIR = tmp_path / "cookies"
-
-        save_cookie("m.youtube.com", "m_youtube_data")
+        save_cookie("m.youtube.com", "data=mobile")
         result = get_cookie_for_url("https://youtube.com/watch?v=abc")
         assert result is not None
         assert "m.youtube.com" in result
 
-        cm.COOKIES_DIR = orig
+    def test_longest_subdomain_match_wins(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
 
-    def test_normalize_handles_userinfo(self, tmp_path):
-        """带 userinfo 的 URL 也能正确提取域名。"""
+        save_cookie("youtube.com", "root=root")
+        save_cookie("m.youtube.com", "mobile=mobile")
+        # Accessing m.youtube.com should return the more specific cookie
+        result = get_cookie_for_url("https://m.youtube.com/watch?v=abc")
+        assert result is not None
+        assert "m.youtube.com" in result
+
+    def test_normalize_handles_userinfo(self):
         result = get_cookie_for_url("https://user:pass@youtube.com/watch?v=abc")
-        assert result is None  # 没有保存 cookie, 返回 None
+        assert result is None
+
+    def test_resolves_relative_path(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+
+        save_cookie("example.com", "x=1")
+        result = get_cookie_for_url("https://www.example.com/video")
+        assert result is not None
+        assert str(tmp_path / "cookies" / "example.com.txt") == result
 
 
 # =============================================================================
@@ -273,19 +287,16 @@ class TestRawToNetscape:
         assert "abc123" in result
 
     def test_removes_quotes_from_values(self):
-        """原始 Cookie 中的引号应被去除。"""
         result = _raw_to_netscape('session="abc123"', "example.com")
         assert "abc123" in result
         assert '"abc123"' not in result
 
     def test_handles_empty_pairs(self):
-        """空的分号段应被忽略。"""
         result = _raw_to_netscape("a=1;;b=2;", "example.com")
         assert "a" in result
         assert "b" in result
 
     def test_uses_std_expiry(self):
-        """生成的 Cookie 应有合理过期时间（当前时间 + 1年）。"""
         import time
 
         result = _raw_to_netscape("a=1", "example.com")
@@ -314,7 +325,6 @@ class TestNormalizeCookieContent:
         assert "y" in result
 
     def test_preserves_netscape_from_cookie_extractor(self):
-        """从浏览器导出的 Netscape 格式应原样保留。"""
         netscape = (
             "# Netscape HTTP Cookie File\n"
             ".youtube.com\tTRUE\t/\tFALSE\t1712345678\tTEST\tvalue\n"
@@ -323,22 +333,28 @@ class TestNormalizeCookieContent:
         assert result == netscape
 
     def test_real_douyin_cookie_string(self):
-        """模拟用户从浏览器复制粘贴的抖音 Cookie 字符串。"""
-        raw = "__ac_nonce=06a44f84f0; __ac_signature=_02B4Z6wo00f01xUfwg; ttwid=1%7Cabc123"
+        raw = (
+            "__ac_nonce=06a44f84f0; "
+            "__ac_signature=_02B4Z6wo00f01xUfwg; ttwid=1%7Cabc123"
+        )
         result = _normalize_cookie_content(raw, "douyin.com")
         assert _is_netscape_format(result) is True
         assert "__ac_nonce" in result
         assert "__ac_signature" in result
         assert "ttwid" in result
 
+    def test_returns_none_for_invalid_content(self):
+        result = _normalize_cookie_content("completely invalid content", "x.com")
+        assert result is None
+
+    def test_returns_none_for_empty_string(self):
+        result = _normalize_cookie_content("", "x.com")
+        assert result is None
+
 
 class TestSaveCookieNormalization:
-    def test_save_converts_raw_cookie(self, tmp_path):
-        """save_cookie 应自动转换原始 Cookie 字符串。"""
-        import core.cookie_manager as cm
-
-        orig = cm.COOKIES_DIR
-        cm.COOKIES_DIR = tmp_path / "cookies"
+    def test_save_converts_raw_cookie(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
         init_cookie_dir()
         init_db()
 
@@ -352,4 +368,11 @@ class TestSaveCookieNormalization:
         assert "name1" in content
         assert "name2" in content
 
-        cm.COOKIES_DIR = orig
+    def test_save_rejects_invalid(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+        init_db()
+
+        result = save_cookie("example.com", "garbage data without equals")
+        assert result is False
+        assert not (tmp_path / "cookies" / "example.com.txt").exists()

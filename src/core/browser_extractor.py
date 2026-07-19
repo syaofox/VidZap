@@ -171,6 +171,10 @@ class PlaywrightNoteExtractor(NoteExtractor):
                     locale="zh-CN",
                     timezone_id="Asia/Shanghai",
                 )
+                if cookie_file:
+                    parsed = _parse_netscape_cookies(cookie_file)
+                    if parsed:
+                        await context.add_cookies(parsed)  # type: ignore[arg-type]
 
                 page = await context.new_page()
                 stealth = Stealth()

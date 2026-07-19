@@ -6,10 +6,12 @@ The NoteExtractor ABC and implementations live in browser_extractor.py.
 import asyncio
 import logging
 import re
+from pathlib import Path
 
 import httpx
 
 from core.browser_extractor import (
+    _CancelledError,
     _download_media,
     _get_extractor,
     is_douyin_note_url,  # noqa: F401 - re-exported
@@ -25,9 +27,6 @@ from core.ytdlp_handler import (
 logger = logging.getLogger(__name__)
 
 DOUYIN_NOTE_PATTERN = re.compile(r"https?://(?:www\.)?douyin\.com/note/(\d+)")
-class _CancelledError(Exception):
-    """Internal exception for cancelling media downloads."""
-    pass
 
 
 # =============================================================================
@@ -50,6 +49,25 @@ async def extract_note_images(url: str, cookie_file: str | None = None) -> dict:
 # =============================================================================
 # 下载
 # =============================================================================
+
+
+def _cookie_file_to_httpx_dict(cookie_file: str) -> dict[str, str]:
+    cookies: dict[str, str] = {}
+    try:
+        content = Path(cookie_file).read_text()
+    except (OSError, FileNotFoundError):
+        return cookies
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        name, value = parts[5], parts[6]
+        if name:
+            cookies[name] = value
+    return cookies
 
 
 async def download_note_images(
@@ -93,9 +111,11 @@ async def download_note_images(
     total_bytes = 0
     start_time = asyncio.get_event_loop().time()
 
+    httpx_cookies = _cookie_file_to_httpx_dict(cookie_file) if cookie_file else {}
     async with httpx.AsyncClient(
         timeout=60,
         follow_redirects=True,
+        cookies=httpx_cookies or None,
         headers={
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
