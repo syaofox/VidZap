@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import logging
 import re
 import shutil
@@ -583,7 +584,6 @@ def update_ytdlp() -> tuple[bool, str, bool]:
         )
         if result.returncode != 0:
             return False, result.stderr.strip()[:200] or "更新失败", False
-        import importlib
 
         importlib.reload(yt_dlp.version)
         new_ver = get_ytdlp_version()
