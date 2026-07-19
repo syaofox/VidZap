@@ -206,7 +206,6 @@ class PlaywrightNoteExtractor(NoteExtractor):
                         wait_until="domcontentloaded",
                         timeout=15000,
                     )
-                    await asyncio.sleep(5)
                 except Exception as e:
                     logger.warning("Homepage visit failed: %s", e)
 
@@ -215,14 +214,27 @@ class PlaywrightNoteExtractor(NoteExtractor):
                 except Exception as e:
                     logger.warning("Note page goto failed: %s", e)
 
-                await asyncio.sleep(8)
+                try:
+                    for _ in range(12):
+                        if api_data:
+                            break
+                        has_images = await page.evaluate(
+                            """() => document.querySelector(
+                                'img[src*="tplv-dy-aweme-images"]'
+                            ) !== null"""
+                        )
+                        if has_images:
+                            break
+                        await asyncio.sleep(1)
+                except Exception:
+                    await asyncio.sleep(1)
 
                 try:
-                    for _ in range(3):
+                    for _ in range(2):
                         await page.evaluate("window.scrollBy(0, window.innerHeight)")
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(0.5)
                     await page.evaluate("window.scrollTo(0, 0)")
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(0.3)
                 except Exception as e:
                     logger.warning("Scroll failed: %s", e)
 
