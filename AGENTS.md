@@ -29,6 +29,16 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 - `PlaywrightNoteExtractor.extract()` 自动从 `cookie_file` 解析 Netscape Cookie 并通过 `context.add_cookies()` 注入。
 - `download_note_images()` 中 `httpx.AsyncClient` 自动从 `cookie_file` 提取 name=value 对作为默认 Cookie 发送。
 
+## Docker 约束
+
+- Docker 以 `nicevid` (uid=1000) 用户运行，通过 `gosu` 降权。
+- `uv` 安装在 `/usr/local/bin/uv`（`update_ytdlp()` 依赖）。
+- HEALTHCHECK：`python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"`，间隔 30s。
+- Xvfb 不由 `entrypoint.sh` 启动，而是由 `browser_extractor._ensure_xvfb()` 在 Douyin 笔记提取时按需启动。
+- Playwright Chromium 安装路径：`/app/.cache/ms-playwright`（`PLAYWRIGHT_BROWSERS_PATH`）。
+- 数据持久化卷：`downloads/`（下载文件）、`cookies/`（Cookie 文件）、`data/`（SQLite DB + NiceGUI storage）。
+- Docker 构建分两阶段：builder 安装依赖 → final 复制 `.venv` + 源码 + Playwright。
+
 ## 数据流
 
 ```

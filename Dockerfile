@@ -10,8 +10,8 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock .python-version ./
 # placeholder so uv sync can inspect the project
-RUN mkdir -p src/core src/pages src/components && \
-    touch src/__init__.py src/core/__init__.py src/pages/__init__.py src/components/__init__.py && \
+RUN mkdir -p src/core src/pages && \
+    touch src/__init__.py src/core/__init__.py src/pages/__init__.py && \
     uv sync --frozen --no-dev
 
 FROM python:3.13-slim
@@ -20,9 +20,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg gosu xvfb && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /root/.local/bin/uv /root/.local/bin/uv
+COPY --from=builder /root/.local/bin/uv /usr/local/bin/uv
 COPY --from=builder /app/.venv /app/.venv
-ENV PATH="/app/.venv/bin:/root/.local/bin:$PATH"
+ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH"
 
 WORKDIR /app
 
@@ -42,6 +42,9 @@ RUN groupadd -g 1000 nicevid && \
 COPY entrypoint.sh /entrypoint.sh
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python", "src/main.py"]
