@@ -1,8 +1,8 @@
-import asyncio
+import logging
 import os
 from pathlib import Path
 
-from nicegui import app, ui
+from nicegui import app, background_tasks, run, ui
 
 from core.cookie_manager import get_cookie_for_url
 from core.download_queue import download_queue
@@ -13,6 +13,8 @@ from core.ytdlp_handler import (
     get_download_history,
     update_download_status,
 )
+
+logger = logging.getLogger(__name__)
 
 STATUS_MAP = {
     "pending": ("⏳", "排队中", "text-grey"),
@@ -27,6 +29,8 @@ _download_progress: dict[int, dict] = {}
 
 def render() -> None:
     """渲染下载历史页面"""
+    ui.on_exception(lambda e: ui.notify(f"页面错误: {e}", type="negative"))
+
     with ui.header().classes("justify-between items-center"):
         ui.label("下载历史").classes("text-h4 text-white")
         ui.button("返回首页", on_click=lambda: ui.navigate.to("/")).props("flat color=white")
@@ -74,11 +78,13 @@ def render() -> None:
                 for rec in records:
                     _render_list_card(rec, dynamic_refs)
 
+    _history_client = ui.context.client
+
     async def _load_and_rebuild() -> None:
-        if getattr(ui.context.client, "_deleted", False):
+        if getattr(_history_client, "_deleted", False):
             return
-        records = await asyncio.get_event_loop().run_in_executor(None, get_download_history)
-        if getattr(ui.context.client, "_deleted", False):
+        records = await run.io_bound(get_download_history)
+        if getattr(_history_client, "_deleted", False):
             return
         rebuild(records)
         _start_timer()
@@ -86,7 +92,7 @@ def render() -> None:
     def switch(mode: str) -> None:
         layout["mode"] = mode
         app.storage.user["history_layout"] = mode
-        asyncio.ensure_future(_load_and_rebuild())
+        background_tasks.create(_load_and_rebuild())
 
     def refresh_active() -> None:
         try:
@@ -147,7 +153,7 @@ def render() -> None:
                 if auto_timer:
                     auto_timer.deactivate()
         except Exception:
-            pass
+            logger.exception("refresh_active 出错")
 
     auto_timer: ui.timer | None = None
 
@@ -163,7 +169,7 @@ def render() -> None:
         if has_active:
             auto_timer = ui.timer(2.0, refresh_active)
 
-    asyncio.ensure_future(_load_and_rebuild())
+    background_tasks.create(_load_and_rebuild())
 
 
 def _render_list_card(rec: dict, dynamic_refs: dict) -> None:

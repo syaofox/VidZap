@@ -15,10 +15,26 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 
 ## 非源码可见约束
 
+### NiceGUI 通用规则
+
+- **`background_tasks.create()` 替代裸 `asyncio.create_task/ensure_future`** — NiceGUI 官方明确禁止在 UI 上下文（页面构建、事件处理器、timer 回调）中使用 `asyncio.create_task()` 或 `asyncio.ensure_future()`，因为 GC 可能取消任务且异常静默丢失。UI 代码一律使用 `background_tasks.create(coro())`。独立基础设施模块（下载队列、core services 等）不需要 NiceGUI event loop，可继续使用 `asyncio.ensure_future()`。
+- **background task 中不能访问 `ui.context.client`** — 背景协程没有 slot context，访问 `ui.context.client` 会抛出 `RuntimeError`。必须在 `background_tasks.create()` 之前捕获 client 引用：`client = ui.context.client`，然后在闭包内使用 `getattr(client, "_deleted", False)` 检查页面是否销毁。
+- **`run.io_bound()` / `run.cpu_bound()` 替代 `run_in_executor`** — I/O 密集型卸载用 `await run.io_bound(sync_fn, args...)`，CPU 密集型用 `await run.cpu_bound(sync_fn, args...)`。它们内部使用线程/进程池，且与 NiceGUI 异常处理集成更好。
 - **Timer 内必须检查** `ui.context.client._deleted` 再操作 UI；否则已销毁页面崩溃。
-- **避免 `ui.timer(0.1, fn, once=True)` 做页面初始化** — 使用 `asyncio.ensure_future(fn())` 替代，消除 Timer 与父 slot 的生命周期绑定，防止 `_get_context` 因 slot 删除抛出 `RuntimeError`。
-- **Dialog 不要用** `dialog.on_submit` — 用 `ui.dialog()` + `ui.card()` context manager。
-- **不要直接调用** `start_download` / `download_note_images` — 全部通过 `download_queue.enqueue()`。
+- **Dialog 用 await 模式替代** `dialog.on_submit` — 用 `with ui.dialog() as dialog, ui.card():` 创建，`result = await dialog` 等待结果，`dialog.submit(value)` 提交。
+- **优先使用 `.set_text()` / `.set_value()` / bindings 原地更新**，而不是重建元素及其子树。重建会丢失焦点、滚动位置和动画状态（NiceGUI 没有 virtual DOM diffing）。
+- **模块级变量是所有用户共享的** — NiceGUI 是单进程，模块级 `list`/`dict` 在所有用户和标签页间共享。需要隔离时使用 `app.storage.user`（按用户持久化）或 `@ui.page` 内的局部变量。
+- **`@ui.page(response_timeout=N)` 控制页面构建超时** — 默认 3 秒，如果页面构建耗时较长（DB 查询、API 调用等），应在页面函数内通过 `background_tasks.create()` 异步加载，骨架 UI 立刻交付。
+- **`app.timer` 用于全局非 UI 定时器** — 不绑定到任何页面上下文，适用于后端周期性任务。`ui.timer` 是 UI 元素，绑定到当前页面，页面销毁后停止。
+- **`ui.on_exception(handler)` 注册页内异常处理** — 在 HTML 已发送给浏览器后发生的异常（按钮点击、timer 回调）会经过此处理器，可用来显示错误通知或对话框。
+- **`ui.query('body')` 进行全局样式** — Python 优先，不要用 `ui.add_head_html('<style>...</style>')` 做页面级样式，改用 `ui.query('body').classes('bg-grey-2')`。注意 `ui.query()` 必须在 `@ui.page` 函数内调用，不能在模块顶层作用域执行。
+- **`result = await element.run_method(...)` / `await element.get_computed_prop(...)`** 可与前端交互获取返回值。
+- **`@ui.refreshable` 用于局部 UI 重建** — 对需要定期刷新的 UI 片段使用，支持 awaitable refresh，支持参数传递。
+- **`app.add_media_files()` 流式服务下载文件** — 对于视频/音频等大文件使用 `add_media_files()` 而非 `add_static_files()`，以支持 Range 请求和流式传输。
+
+### 项目专用规则
+
+- **所有下载必须通过 `download_queue.enqueue()`**，禁止直接调用 `start_download` / `download_note_images`。
 - 重试时传 `progress_callback`，保证历史页面进度更新。
 - `file_path` 对 Douyin notes 是**目录**（不是文件），`/downloads-file/{id}/{filename}` 内部按 `is_dir()` 分支处理。
 - 安全：不记录密钥，Cookie 文件 gitignored，配置用环境变量，验证所有用户输入。

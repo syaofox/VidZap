@@ -1,6 +1,4 @@
-import asyncio
-
-from nicegui import ui
+from nicegui import background_tasks, run, ui
 
 from core.cookie_manager import (
     delete_cookie,
@@ -13,6 +11,8 @@ from core.cookie_manager import (
 
 def render() -> None:
     """渲染 Cookie 设置页面"""
+    ui.on_exception(lambda e: ui.notify(f"页面错误: {e}", type="negative"))
+
     with ui.header().classes("justify-between items-center"):
         ui.label("Cookie 设置").classes("text-h4 text-white")
         ui.button("返回首页", on_click=lambda: ui.navigate.to("/")).props("flat color=white")
@@ -28,12 +28,14 @@ def render() -> None:
                 ui.spinner(size="sm")
                 ui.label("加载中...").classes("text-grey")
 
+        _cookies_client = ui.context.client
+
         async def _load_cookies() -> None:
-            if getattr(ui.context.client, "_deleted", False):
+            if getattr(_cookies_client, "_deleted", False):
                 return
             cookie_table_container.clear()
-            rows = await asyncio.get_event_loop().run_in_executor(None, list_cookies)
-            if getattr(ui.context.client, "_deleted", False):
+            rows = await run.io_bound(list_cookies)
+            if getattr(_cookies_client, "_deleted", False):
                 return
             cookie_table_ref["table"] = ui.table(
                 columns=[
@@ -50,7 +52,7 @@ def render() -> None:
                 ui.button("添加 Cookie", on_click=lambda: show_add_dialog()).props("color=primary")
                 ui.button("删除选中", on_click=lambda: delete_selected()).props("color=negative")
 
-        asyncio.ensure_future(_load_cookies())
+        background_tasks.create(_load_cookies())
 
     def show_add_dialog() -> None:
         """显示添加 Cookie 对话框"""

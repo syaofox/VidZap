@@ -47,31 +47,19 @@ def serve_download_file(download_id: int, filename: str):
 
 @ui.page("/")
 def index() -> None:
-    ui.add_head_html("""
-    <style>
-        .nicegui-content { max-width: 1200px; margin: 0 auto; }
-    </style>
-    """)
+    ui.query('.nicegui-content').style('max-width: 1200px; margin: 0 auto;')
     home.render()
 
 
 @ui.page("/settings")
 def settings_page() -> None:
-    ui.add_head_html("""
-    <style>
-        .nicegui-content { max-width: 1200px; margin: 0 auto; }
-    </style>
-    """)
+    ui.query('.nicegui-content').style('max-width: 1200px; margin: 0 auto;')
     settings.render()
 
 
 @ui.page("/history")
 def history_page() -> None:
-    ui.add_head_html("""
-    <style>
-        .nicegui-content { max-width: 1200px; margin: 0 auto; }
-    </style>
-    """)
+    ui.query('.nicegui-content').style('max-width: 1200px; margin: 0 auto;')
     history.render()
 
 

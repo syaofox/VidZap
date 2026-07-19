@@ -1,7 +1,6 @@
-import asyncio
 from collections.abc import Callable
 
-from nicegui import ui
+from nicegui import background_tasks, run, ui
 
 from core.cookie_manager import get_cookie_for_url
 from core.douyin_note import extract_note_images, is_douyin_note_url
@@ -21,6 +20,8 @@ from core.ytdlp_handler import (
 
 def render() -> None:
     """渲染首页"""
+    ui.on_exception(lambda e: ui.notify(f"页面错误: {e}", type="negative"))
+
     # 前向声明: 在后续 with 语句中实际赋值
     supported_sites_dialog: ui.dialog
     all_sites_dialog: ui.dialog
@@ -205,22 +206,22 @@ def render() -> None:
         with ui.row().classes("w-full justify-between items-center mt-2"):
             ver_label = ui.label("yt-dlp 加载中...").classes("text-caption text-grey")
 
+            _version_client = ui.context.client
+
             async def _load_version() -> None:
-                if getattr(ui.context.client, "_deleted", False):
+                if getattr(_version_client, "_deleted", False):
                     return
-                ver = await asyncio.get_event_loop().run_in_executor(None, get_ytdlp_version)
-                if getattr(ui.context.client, "_deleted", False):
+                ver = await run.io_bound(get_ytdlp_version)
+                if getattr(_version_client, "_deleted", False):
                     return
                 ver_label.text = f"yt-dlp {ver}"
 
-            asyncio.ensure_future(_load_version())
+            background_tasks.create(_load_version())
 
             async def _update_ytdlp() -> None:
                 update_btn.disable()
                 update_btn.text = "更新中..."
-                ok, msg, changed = await asyncio.get_event_loop().run_in_executor(
-                    None, update_ytdlp
-                )
+                ok, msg, changed = await run.io_bound(update_ytdlp)
                 if ok:
                     ver_label.text = f"yt-dlp {get_ytdlp_version()}"
                     if changed:
@@ -245,11 +246,13 @@ def render() -> None:
     # 全部站点弹窗（从 yt-dlp 动态获取）
     sites_container: dict = {"container": None}
 
+    _sites_client = ui.context.client
+
     async def _load_sites() -> None:
-        if getattr(ui.context.client, "_deleted", False):
+        if getattr(_sites_client, "_deleted", False):
             return
-        all_extractors = await asyncio.get_event_loop().run_in_executor(None, get_supported_sites)
-        if getattr(ui.context.client, "_deleted", False):
+        all_extractors = await run.io_bound(get_supported_sites)
+        if getattr(_sites_client, "_deleted", False):
             return
         sites_container["container"].clear()
         with sites_container["container"]:
@@ -273,7 +276,7 @@ def render() -> None:
                     ui.spinner(size="sm")
                     ui.label("加载中...").classes("text-grey")
                 sites_container["container"] = ui.column().classes("gap-0 w-full")
-                all_sites_dialog.on("open", lambda: asyncio.ensure_future(_load_sites()))
+                all_sites_dialog.on("open", lambda: background_tasks.create(_load_sites()))
         with ui.row().classes("w-full justify-end mt-2"):
             ui.button("关闭", on_click=all_sites_dialog.close).props("flat")
 

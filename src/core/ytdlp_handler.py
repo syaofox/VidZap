@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import yt_dlp
+from nicegui import run
 
 from core.db import get_connection
 
@@ -97,9 +98,8 @@ async def extract_info(url: str, cookie_file: str | None = None) -> dict:
     if cookie_file:
         opts["cookiefile"] = cookie_file
 
-    loop = asyncio.get_event_loop()
     info = await asyncio.wait_for(
-        loop.run_in_executor(None, lambda: _extract_sync(url, opts)),
+        run.io_bound(_extract_sync, url, opts),
         timeout=60,
     )
     return info
@@ -287,9 +287,8 @@ async def start_download(
     else:
         opts["format"] = format_id
 
-    loop = asyncio.get_event_loop()
     try:
-        file_path = await loop.run_in_executor(None, lambda: _download_sync(url, opts))
+        file_path = await run.io_bound(_download_sync, url, opts)
     except DownloadCancelledError:
         if download_id is not None:
             update_download_status(download_id, "failed", error_msg="用户取消")

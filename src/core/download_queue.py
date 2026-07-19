@@ -66,6 +66,8 @@ class DownloadQueue:
         async with self._lock:
             if origin not in self._queues:
                 self._queues[origin] = asyncio.Queue()
+                # 使用 ensure_future 而非 background_tasks.create 是因为
+                # DownloadQueue 是独立基础设施模块，不需要 NiceGUI event loop
                 self._workers[origin] = asyncio.ensure_future(self._worker(origin))
             await self._queues[origin].put(task)
 
