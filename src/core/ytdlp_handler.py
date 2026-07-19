@@ -541,32 +541,6 @@ def clear_completed_records() -> int:
         return cur.rowcount
 
 
-async def batch_download(
-    urls: list[str],
-    format_id: str,
-    cookie_file: str | None,
-    progress_callback: Callable[[str, float, str], None],
-) -> list[str]:
-    """批量下载多个视频"""
-    results = []
-    for url in urls:
-        try:
-
-            def url_progress(percent: float, speed: str, eta: str) -> None:
-                progress_callback(url, percent, speed)
-
-            file_path = await start_download(
-                url,
-                format_id,
-                cookie_file,
-                url_progress,
-            )
-            results.append(file_path)
-        except Exception as e:
-            progress_callback(url, -1, str(e))
-    return results
-
-
 def get_ytdlp_version() -> str:
     """获取当前 yt-dlp 版本"""
     return str(yt_dlp.version.__version__)

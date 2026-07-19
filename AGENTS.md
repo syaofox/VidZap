@@ -43,9 +43,14 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 - DB 中 `cookie_file` 存相对路径 `{domain}.txt`，读取时通过 `_resolve_cookie_path()` 拼装绝对路径（`cookie_manager.py`）。
 - `save_cookie()` 返回 `False` 表示内容无效（无法解析为 Netscape 或原始 Cookie 格式），保存失败。UI 调用处必须检查返回值，返回 `False` 时提示用户而不是显示"保存成功"。
 - `_CancelledError` 统一在 `browser_extractor.py` 定义，`douyin_note.py` 从 `browser_extractor` 导入。
-- **`note_info` 预提取优化**：`download_note_images()` 接受可选参数 `note_info: dict | None`，当已分析过时跳过二次 Playwright 提取。`home.py:download_note()` 从 `analysis_result["info"]` 取出后经 `DownloadTask.note_info` → `_worker()` 透传。**注意：仅单链接模式传 note_info，批量模式传 None**（批量时只分析了第一个 URL，其他 URL 需自动提取）。新增下载入口若没有预提取数据，传 `note_info=None` 即可走自动提取回退。
+- **`note_info` 预提取优化**：`download_note_images()` 接受可选参数 `note_info: dict | None`，当已分析过时跳过二次 Playwright 提取。`home.py:download_note()` 从 `analysis_result["urls_info"]`（per-URL dict）取出后经 `DownloadTask.note_info` → `_worker()` 透传。**单链接和批量模式均会传 per-URL note_info**（批量模式在 analyze 阶段已并发提取所有 URL）。新增下载入口若没有预提取数据，传 `note_info=None` 即可走自动提取回退。
 - `PlaywrightNoteExtractor.extract()` 自动从 `cookie_file` 解析 Netscape Cookie 并通过 `context.add_cookies()` 注入。
 - `download_note_images()` 中 `httpx.AsyncClient` 自动从 `cookie_file` 提取 name=value 对作为默认 Cookie 发送。
+- **`classify_urls(urls)` 和 `split_existing_urls(urls)`** 是 `home.py` 的模块级函数，分别用于 URL 类型分类（video/douyin_note/mixed）和重复检测（返回新 URL 列表和已有记录列表）。可直接导入测试。
+- **批量下载 URL 类型一致性**：analyze 阶段调用 `classify_urls()` 检查所有 URL 类型，混合类型直接报错返回，不会部分处理。
+- **重复检测逐 URL**：`do_download()` / `do_note_download()` 使用 `split_existing_urls()` 区分新 URL 和已存在的 URL。弹窗提供"跳过/覆盖/取消"三个选项，不再全有全无。
+- **`batch_download()` 已从 `ytdlp_handler.py` 删除**（死代码，从未被调用）。批量下载统一走 `download_queue.enqueue()` 逐 URL。
+- **`download()` 和 `download_note()` 签名变更**：第一个参数改为 `urls: list[str]`，由调用方传入待下载 URL 列表（可能是过滤后的子集）。
 
 ## Docker 约束
 

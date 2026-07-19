@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Callable
 
 from nicegui import background_tasks, run, ui
@@ -16,6 +17,32 @@ from core.ytdlp_handler import (
     get_ytdlp_version,
     update_ytdlp,
 )
+
+
+def classify_urls(urls: list[str]) -> str:
+    """Classify URLs as 'video', 'douyin_note', or 'mixed'."""
+    note_count = sum(1 for u in urls if is_douyin_note_url(u))
+    if note_count == 0:
+        return "video"
+    if note_count == len(urls):
+        return "douyin_note"
+    return "mixed"
+
+
+def split_existing_urls(urls: list[str]) -> tuple[list[str], list[dict]]:
+    """Split URLs into new (not yet downloaded) and existing (already in DB).
+
+    Returns (new_urls, existing_records).
+    """
+    new_urls: list[str] = []
+    existing: list[dict] = []
+    for u in urls:
+        rec = find_existing_download(u)
+        if rec:
+            existing.append(rec)
+        else:
+            new_urls.append(u)
+    return new_urls, existing
 
 
 def render() -> None:
@@ -309,24 +336,36 @@ def render() -> None:
     format_card = ui.card().classes("w-full max-w-4xl mx-auto mt-4 p-6 hidden")
 
     # 存储分析结果
-    analysis_result: dict = {"info": None, "urls": []}
+    analysis_result: dict = {"info": None, "urls": [], "urls_info": {}}
 
-    async def download_note(on_done: Callable | None = None) -> None:
+    async def download_note(
+        urls: list[str],
+        on_done: Callable | None = None,
+    ) -> None:
         """下载抖音图文（幻灯片）的所有图片"""
-        urls = analysis_result["urls"]
         if not urls:
-            ui.notify("请先分析链接", type="warning")
             return
 
-        info = analysis_result.get("info") or {}
+        urls_info = analysis_result.get("urls_info") or {}
         from pages.history import _download_progress
 
         for url in urls:
             cookie = get_cookie_for_url(url)
+            note_info_for_url = urls_info.get(url)
+            title = (
+                note_info_for_url.get("title", "Unknown")
+                if note_info_for_url
+                else "Unknown"
+            )
+            thumb = (
+                note_info_for_url.get("thumbnail", "")
+                if note_info_for_url
+                else ""
+            )
             dl_id = create_download_record(
                 url=url,
-                title=info.get("title", "Unknown"),
-                thumbnail=info.get("thumbnail", ""),
+                title=title,
+                thumbnail=thumb,
                 format_id="images",
             )
 
@@ -340,9 +379,6 @@ def render() -> None:
 
                 return cb
 
-            # 单链接模式复用预提取 note_info 跳过 Playwright；
-            # 批量模式没有为每个 URL 单独提取过，传 None 让下载时自动提取
-            note_info_param = info if len(urls) == 1 else None
             await download_queue.enqueue(
                 url=url,
                 format_id="images",
@@ -350,7 +386,7 @@ def render() -> None:
                 progress_callback=_make_callback(dl_id),
                 download_id=dl_id,
                 task_type="douyin_note",
-                note_info=note_info_param,
+                note_info=note_info_for_url,
             )
 
         if on_done:
@@ -383,6 +419,15 @@ def render() -> None:
 
             analysis_result["urls"] = urls
 
+            # 类型一致性检查（Fix E）
+            url_type = classify_urls(urls)
+            if url_type == "mixed":
+                ui.notify(
+                    "不支持混合不同类型的链接，请将视频和抖音图文分开下载",
+                    type="warning",
+                )
+                return
+
             info_card.classes(remove="hidden")
             info_card.clear()
 
@@ -397,6 +442,31 @@ def render() -> None:
                 note_info = await extract_note_images(urls[0], cookie)
                 analysis_result["info"] = note_info
                 analysis_result["is_note"] = True
+                analysis_result["urls_info"] = {urls[0]: note_info}
+
+                # 批量模式：为其余 URL 并发提取 note_info（Playwright 重量级，限 concurrency=1）
+                if len(urls) > 1:
+                    sem = asyncio.Semaphore(1)
+
+                    async def _extract_other_note(u: str) -> tuple[str, dict | None]:
+                        async with sem:
+                            try:
+                                c = get_cookie_for_url(u)
+                                return u, await extract_note_images(u, c)
+                            except Exception as e:
+                                ui.notify(
+                                    f"分析失败: {u}\n{str(e)[:200]}",
+                                    type="negative",
+                                    multi_line=True,
+                                )
+                                return u, None
+
+                    other_results = await asyncio.gather(
+                        *[_extract_other_note(u) for u in urls[1:]]
+                    )
+                    for u, ni in other_results:
+                        if ni is not None:
+                            analysis_result["urls_info"][u] = ni
 
                 info_card.clear()
                 with info_card:
@@ -436,38 +506,52 @@ def render() -> None:
                         dl_btn_ref: dict = {"btn": None}
 
                         async def do_note_download() -> None:
-                            urls_to_check = analysis_result["urls"]
-                            duplicate_titles: list[str] = []
-                            for u in urls_to_check:
-                                existing = find_existing_download(u)
-                                if existing:
-                                    duplicate_titles.append(existing.get("title") or u[:60])
+                            urls = analysis_result["urls"]
+                            new_urls, existing = split_existing_urls(urls)
 
-                            if duplicate_titles:
+                            urls_to_download = urls
+                            if existing:
+                                existing_titles = [
+                                    r.get("title") or r["url"][:60] for r in existing
+                                ]
                                 with ui.dialog() as dialog, ui.card():
-                                    ui.label("链接已存在于下载记录中").classes("text-h6")
-                                    for t in duplicate_titles:
+                                    ui.label("部分链接已存在于下载记录中").classes("text-h6")
+                                    for t in existing_titles:
                                         ui.label(f"  · {t}").classes("text-body2")
                                     with ui.row().classes("w-full justify-end mt-4 gap-2"):
                                         ui.button(
-                                            "放弃",
+                                            "取消",
                                             on_click=lambda: dialog.submit("cancel"),
                                         ).props("flat")
                                         ui.button(
-                                            "覆盖",
+                                            "跳过已存在的",
+                                            on_click=lambda: dialog.submit("skip"),
+                                        ).props("color=primary")
+                                        ui.button(
+                                            "覆盖重新下载",
                                             on_click=lambda: dialog.submit("overwrite"),
                                         ).props("color=negative")
                                 choice = await dialog
-                                if choice != "overwrite":
+                                if choice == "cancel":
                                     dl_btn_ref["btn"].enable()
                                     return
-                                for u in urls_to_check:
-                                    existing = find_existing_download(u)
-                                    if existing:
-                                        delete_download_record(existing["id"])
+                                elif choice == "skip":
+                                    urls_to_download = new_urls
+                                elif choice == "overwrite":
+                                    for r in existing:
+                                        delete_download_record(r["id"])
+                                    urls_to_download = urls
+
+                            if not urls_to_download:
+                                ui.notify("没有需要下载的新链接", type="info")
+                                dl_btn_ref["btn"].enable()
+                                return
 
                             dl_btn_ref["btn"].disable()
-                            await download_note(on_done=lambda: dl_btn_ref["btn"].enable())
+                            await download_note(
+                                urls_to_download,
+                                on_done=lambda: dl_btn_ref["btn"].enable(),
+                            )
 
                         dl_btn_ref["btn"] = ui.button(
                             f"下载全部图片 ({note_info['image_count']} 张)",
@@ -480,6 +564,26 @@ def render() -> None:
             info = await extract_info(urls[0], cookie)
             analysis_result["info"] = info
             analysis_result["is_note"] = False
+            analysis_result["urls_info"] = {urls[0]: info}
+
+            # 批量模式：为其余 URL 并发提取信息
+            if len(urls) > 1:
+                sem = asyncio.Semaphore(3)  # yt-dlp 提取，限 concurrency=3
+
+                async def _extract_other_info(u: str) -> tuple[str, dict | None]:
+                    async with sem:
+                        try:
+                            c = get_cookie_for_url(u)
+                            return u, await extract_info(u, c)
+                        except Exception:
+                            return u, None
+
+                other_results = await asyncio.gather(
+                    *[_extract_other_info(u) for u in urls[1:]]
+                )
+                for u, ei in other_results:
+                    if ei is not None:
+                        analysis_result["urls_info"][u] = ei
 
             info_card.clear()
             with info_card:
@@ -728,41 +832,51 @@ def render() -> None:
                         else:
                             sel = list(selected_formats)
 
-                        # 检测历史记录中是否存在重复
-                        urls_to_check = analysis_result["urls"]
-                        duplicate_titles: list[str] = []
-                        for u in urls_to_check:
-                            existing = find_existing_download(u)
-                            if existing:
-                                duplicate_titles.append(existing.get("title") or u[:60])
+                        urls = analysis_result["urls"]
+                        new_urls, existing = split_existing_urls(urls)
 
-                        if duplicate_titles:
+                        urls_to_download = urls
+                        if existing:
+                            existing_titles = [
+                                r.get("title") or r["url"][:60] for r in existing
+                            ]
                             with ui.dialog() as dialog, ui.card():
-                                ui.label("链接已存在于下载记录中").classes("text-h6")
-                                for t in duplicate_titles:
+                                ui.label("部分链接已存在于下载记录中").classes("text-h6")
+                                for t in existing_titles:
                                     ui.label(f"  · {t}").classes("text-body2")
                                 with ui.row().classes("w-full justify-end mt-4 gap-2"):
                                     ui.button(
-                                        "放弃",
+                                        "取消",
                                         on_click=lambda: dialog.submit("cancel"),
                                     ).props("flat")
                                     ui.button(
-                                        "覆盖",
+                                        "跳过已存在的",
+                                        on_click=lambda: dialog.submit("skip"),
+                                    ).props("color=primary")
+                                    ui.button(
+                                        "覆盖重新下载",
                                         on_click=lambda: dialog.submit("overwrite"),
                                     ).props("color=negative")
                             choice = await dialog
-                            if choice != "overwrite":
+                            if choice == "cancel":
                                 video_dl_btn_ref["btn"].enable()
                                 return
-                            # 覆盖：删除旧记录
-                            for u in urls_to_check:
-                                existing = find_existing_download(u)
-                                if existing:
-                                    delete_download_record(existing["id"])
+                            elif choice == "skip":
+                                urls_to_download = new_urls
+                            elif choice == "overwrite":
+                                for r in existing:
+                                    delete_download_record(r["id"])
+                                urls_to_download = urls
+
+                        if not urls_to_download:
+                            ui.notify("没有需要下载的新链接", type="info")
+                            video_dl_btn_ref["btn"].enable()
+                            return
 
                         video_dl_btn_ref["btn"].disable()
                         selected_sub_langs = [cb.text for cb in sub_checkboxes if cb.value]
                         await download(
+                            urls_to_download,
                             sel,
                             thumb_cb.value,
                             sub_cb.value and bool(selected_sub_langs),
@@ -786,6 +900,7 @@ def render() -> None:
             analyze_btn.enable()
 
     async def download(
+        urls: list[str],
         selected_formats: list[dict],
         write_thumbnail: bool = True,
         write_subtitles: bool = True,
@@ -797,9 +912,7 @@ def render() -> None:
             ui.notify("请选择格式", type="warning")
             return
 
-        urls = analysis_result["urls"]
         if not urls:
-            ui.notify("请先分析链接", type="warning")
             return
 
         # 构建 format_id
@@ -810,14 +923,17 @@ def render() -> None:
 
         # 开始下载（同源串行、不同源并行）
         info = analysis_result.get("info") or {}
+        urls_info = analysis_result.get("urls_info") or {}
         from pages.history import _download_progress
 
         for url in urls:
             cookie = get_cookie_for_url(url)
+            url_title = urls_info.get(url, {}).get("title", info.get("title", "Unknown"))
+            url_thumb = urls_info.get(url, {}).get("thumbnail", info.get("thumbnail", ""))
             dl_id = create_download_record(
                 url=url,
-                title=info.get("title", "Unknown"),
-                thumbnail=info.get("thumbnail", ""),
+                title=url_title,
+                thumbnail=url_thumb,
                 format_id=format_id,
             )
 
