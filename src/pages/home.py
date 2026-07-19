@@ -568,7 +568,7 @@ def render() -> None:
 
             # 批量模式：为其余 URL 并发提取信息
             if len(urls) > 1:
-                sem = asyncio.Semaphore(3)  # yt-dlp 提取，限 concurrency=3
+                sem = asyncio.Semaphore(1)  # 串行避免触发 YouTube 反爬
 
                 async def _extract_other_info(u: str) -> tuple[str, dict | None]:
                     async with sem:
