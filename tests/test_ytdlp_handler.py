@@ -6,9 +6,11 @@ import pytest
 from core.ytdlp_handler import (
     DOWNLOADS_DIR,
     MAX_TITLE_LENGTH,
+    _DEFAULT_HTTP_HEADERS,
     _format_eta,
     _format_speed,
     _is_format_error,
+    _is_http_error,
     _is_subtitle_error,
     _strip_subtitle_opts,
     check_ffmpeg,
@@ -179,6 +181,48 @@ class TestRealWorldScenario:
         for key in ("title_dir", "filename"):
             component_bytes = components[key].encode("utf-8")
             assert len(component_bytes) < NAME_MAX
+
+
+# =============================================================================
+# 默认 HTTP 头部测试
+# =============================================================================
+
+
+class TestDefaultHttpHeaders:
+    def test_is_dict(self):
+        assert isinstance(_DEFAULT_HTTP_HEADERS, dict)
+
+    def test_has_required_keys(self):
+        required = {"User-Agent", "Accept", "Accept-Language"}
+        assert required.issubset(_DEFAULT_HTTP_HEADERS.keys())
+
+    def test_user_agent_is_chrome(self):
+        ua = _DEFAULT_HTTP_HEADERS["User-Agent"]
+        assert "Chrome" in ua and "Safari" in ua
+
+
+class TestIsHttpError:
+    @pytest.mark.parametrize(
+        ("msg", "status_code", "expected"),
+        [
+            ("HTTP Error 412: Precondition Failed", 412, True),
+            ("http error 412 precondition failed", 412, True),
+            ("HTTP Error 403: Forbidden", 412, False),
+            ("Some other error", 412, False),
+            ("", 412, False),
+            ("http error 412", 412, True),
+            ("HTTP Error 412", 412, True),
+            ("HTTP Error 500: Internal Server Error", 500, True),
+            ("http error 500", 500, True),
+            ("http error 412", 500, False),
+        ],
+    )
+    def test_detection(self, msg, status_code, expected):
+        assert _is_http_error(Exception(msg), status_code) == expected
+
+    def test_defaults_to_412(self):
+        assert _is_http_error(Exception("HTTP Error 412: Precondition Failed"))
+        assert not _is_http_error(Exception("HTTP Error 403: Forbidden"))
 
 
 # =============================================================================
