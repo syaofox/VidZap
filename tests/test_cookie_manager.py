@@ -1,4 +1,5 @@
 """Tests for core.cookie_manager."""
+
 import pytest
 
 from core.cookie_manager import (
@@ -256,8 +257,7 @@ class TestGetCookieForUrl:
 class TestIsNetscapeFormat:
     def test_recognizes_netscape_format(self):
         content = (
-            "# Netscape HTTP Cookie File\n"
-            ".youtube.com\tTRUE\t/\tFALSE\t1712345678\tname\tvalue\n"
+            "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t1712345678\tname\tvalue\n"
         )
         assert _is_netscape_format(content) is True
 
@@ -311,6 +311,41 @@ class TestRawToNetscape:
             expected_max = now + 366 * 86400
             assert expected_min <= expiry <= expected_max
 
+    def test_secure_prefix_sets_secure_true(self):
+        result = _raw_to_netscape("__Secure-3PSID=sid123", "youtube.com")
+        lines = result.strip().splitlines()
+        cookie_line = next(line for line in lines if not line.startswith("#") and line.strip())
+        parts = cookie_line.split("\t")
+        assert parts[3] == "TRUE", f"__Secure- cookie should have secure=TRUE, got {parts[3]}"
+
+    def test_host_prefix_sets_secure_true(self):
+        result = _raw_to_netscape("__Host-name=hostval", "youtube.com")
+        lines = result.strip().splitlines()
+        cookie_line = next(line for line in lines if not line.startswith("#") and line.strip())
+        parts = cookie_line.split("\t")
+        assert parts[3] == "TRUE", f"__Host- cookie should have secure=TRUE, got {parts[3]}"
+
+    def test_regular_cookie_stays_secure_false(self):
+        result = _raw_to_netscape("name1=val1; name2=val2", "example.com")
+        lines = result.strip().splitlines()
+        for line in lines:
+            if line.startswith("#") or not line.strip():
+                continue
+            parts = line.split("\t")
+            assert parts[3] == "FALSE", (
+                f"regular cookie '{parts[5]}' should have secure=FALSE, got {parts[3]}"
+            )
+
+    def test_mixed_cookies_secure_flag(self):
+        result = _raw_to_netscape("__Secure-3PSID=sid123; name1=val1", "youtube.com")
+        lines = result.strip().splitlines()
+        cookies = [line for line in lines if not line.startswith("#") and line.strip()]
+        assert len(cookies) == 2
+        secure_part = [c.split("\t") for c in cookies if c.split("\t")[5] == "__Secure-3PSID"][0]
+        normal_part = [c.split("\t") for c in cookies if c.split("\t")[5] == "name1"][0]
+        assert secure_part[3] == "TRUE"
+        assert normal_part[3] == "FALSE"
+
 
 class TestNormalizeCookieContent:
     def test_passes_through_netscape_format(self):
@@ -326,17 +361,13 @@ class TestNormalizeCookieContent:
 
     def test_preserves_netscape_from_cookie_extractor(self):
         netscape = (
-            "# Netscape HTTP Cookie File\n"
-            ".youtube.com\tTRUE\t/\tFALSE\t1712345678\tTEST\tvalue\n"
+            "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t1712345678\tTEST\tvalue\n"
         )
         result = _normalize_cookie_content(netscape, "youtube.com")
         assert result == netscape
 
     def test_real_douyin_cookie_string(self):
-        raw = (
-            "__ac_nonce=06a44f84f0; "
-            "__ac_signature=_02B4Z6wo00f01xUfwg; ttwid=1%7Cabc123"
-        )
+        raw = "__ac_nonce=06a44f84f0; __ac_signature=_02B4Z6wo00f01xUfwg; ttwid=1%7Cabc123"
         result = _normalize_cookie_content(raw, "douyin.com")
         assert _is_netscape_format(result) is True
         assert "__ac_nonce" in result

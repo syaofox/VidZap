@@ -155,19 +155,18 @@ def render() -> None:
         except Exception:
             logger.exception("refresh_active 出错")
 
-    auto_timer: ui.timer | None = None
+    auto_timer = ui.timer(2.0, refresh_active, active=False)
 
     def _start_timer() -> None:
-        nonlocal auto_timer
-        if auto_timer:
-            auto_timer.deactivate()
         def _is_active(rid: int) -> bool:
             rec = get_download_by_id(rid)
             return rec is not None and rec["status"] in ("pending", "downloading")
 
         has_active = any(_is_active(rid) for rid in dynamic_refs)
         if has_active:
-            auto_timer = ui.timer(2.0, refresh_active)
+            auto_timer.activate()
+        else:
+            auto_timer.deactivate()
 
     background_tasks.create(_load_and_rebuild())
 

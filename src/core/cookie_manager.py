@@ -122,11 +122,13 @@ def _raw_to_netscape(content: str, domain: str) -> str:
         name, value = pair.split("=", 1)
         value = value.strip().strip('"').strip("'")
         expiry = str(int(time.time()) + 365 * 86400)
+        # __Secure- / __Host- 前缀的 cookie 必须设置 secure=TRUE 才能通过 HTTPS 发送
+        is_secure = name.startswith("__Secure-") or name.startswith("__Host-")
         parts = [
             f".{domain}",
             "TRUE",
             "/",
-            "FALSE",
+            "TRUE" if is_secure else "FALSE",
             expiry,
             name,
             value,

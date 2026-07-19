@@ -29,17 +29,6 @@ _UNSUPPORTED_DOUYIN_PATTERNS: list[re.Pattern] = [
     _DOUYIN_JINGXUAN_PATTERN,
 ]
 
-# 发送给 yt-dlp 的默认 HTTP 头，用于绕过站点反爬（如 Bilibili 的 412）
-_DEFAULT_HTTP_HEADERS: dict[str, str] = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/131.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-}
-
 
 def normalize_url(url: str) -> str:
     """规范化视频 URL，将 yt-dlp 不支持的格式转为标准格式。
@@ -106,7 +95,6 @@ async def extract_info(url: str, cookie_file: str | None = None) -> dict:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "http_headers": _DEFAULT_HTTP_HEADERS,
     }
     if cookie_file:
         opts["cookiefile"] = cookie_file
@@ -119,21 +107,34 @@ async def extract_info(url: str, cookie_file: str | None = None) -> dict:
 
 
 def _extract_sync(url: str, opts: dict) -> dict:
-    """同步提取视频信息，cookie 失败时自动降级重试"""
+    """同步提取视频信息，cookie 失败时自动降级重试。
+
+    重试链：
+    1. cookie
+    2. 移除 cookie（cookie 触发反爬时）
+    """
+    info: dict | None = None
+    last_error: Exception | None = None
+
+    # 尝试 1：原始 opts（含 cookie）
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-    except Exception:
-        # cookie 可能触发 YouTube 反爬，降级为无 cookie 重试
-        if opts.get("cookiefile"):
-            fallback = {k: v for k, v in opts.items() if k != "cookiefile"}
-            try:
-                with yt_dlp.YoutubeDL(fallback) as ydl:
-                    info = ydl.extract_info(url, download=False)
-            except Exception:
-                raise  # 无 cookie 也失败，抛出原始异常
-        else:
-            raise
+    except Exception as e:
+        last_error = e
+
+    # 尝试 2：移除 cookie（cookie 可能触发 YouTube 反爬）
+    if info is None and opts.get("cookiefile"):
+        fallback = {k: v for k, v in opts.items() if k != "cookiefile"}
+        try:
+            with yt_dlp.YoutubeDL(fallback) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except Exception as e:
+            last_error = e
+
+    if info is None:
+        assert last_error is not None
+        raise last_error
 
     formats = []
     for f in info.get("formats", []):
@@ -261,7 +262,6 @@ async def start_download(
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "http_headers": _DEFAULT_HTTP_HEADERS,
         # 重试与限速，避免 HTTP 429
         "retries": 3,
         "fragment_retries": 3,
@@ -322,10 +322,6 @@ async def start_download(
     return file_path
 
 
-def _is_http_error(e: Exception, status_code: int = 412) -> bool:
-    msg = str(e).lower()
-    return f"http error {status_code}" in msg
-
 
 def _is_format_error(e: Exception) -> bool:
     """判断异常是否是格式不可用错误"""
@@ -359,12 +355,12 @@ def _download_sync(url: str, opts: dict) -> str:
     """同步下载，自动降级重试。
 
     重试链：
-    1. cookie + 指定格式 + 字幕 + 自定义 headers
-    2. cookie + 指定格式 + 无字幕（字幕下载失败时）
-    3. cookie + 自动选择格式（格式不可用时）
-    4. 移除自定义 headers，保留 cookie + format（412 反爬时）
-    5. 无 cookie + 指定格式
-    6. 无 cookie + 自动选择格式（最后手段）
+    1. cookie + 指定格式 + 字幕
+    2. 去掉字幕（字幕下载失败时）
+    3. 去掉指定格式，自动选择（格式不可用时）
+    4. 去掉 cookie（如果存在）
+    5. 去掉 cookie + format（如果存在 cookie 且格式不可用）
+    6. 去掉 format + 字幕（无条件最后手段）
     """
     has_cookie = bool(opts.get("cookiefile"))
     has_format = "format" in opts
@@ -400,19 +396,7 @@ def _download_sync(url: str, opts: dict) -> str:
         except Exception as e:
             last_error = e
 
-    # 尝试 4：412 → 去掉自定义 http_headers，保持 cookie + format（用 yt-dlp 默认头）
-    if _is_http_error(last_error):
-        try:
-            fallback = {k: v for k, v in opts.items() if k != "http_headers"}
-            if has_subtitles and _is_subtitle_error(last_error):
-                fallback = _strip_subtitle_opts(fallback)
-            return _try_download(url, fallback)
-        except DownloadCancelledError:
-            raise
-        except Exception as e:
-            last_error = e
-
-    # 尝试 5：去掉 cookie，保持原 format
+    # 尝试 4：去掉 cookie（如果存在），保持原 format
     if has_cookie:
         try:
             fallback = {k: v for k, v in opts.items() if k != "cookiefile"}
@@ -424,7 +408,7 @@ def _download_sync(url: str, opts: dict) -> str:
         except Exception as e:
             last_error = e
 
-        # 尝试 6：去掉 cookie 且去掉 format（最后手段）
+        # 尝试 5：去掉 cookie 且去掉 format（最后手段，仅 cookie 场景）
         if has_format and _is_format_error(last_error):
             try:
                 fallback = {
@@ -437,6 +421,21 @@ def _download_sync(url: str, opts: dict) -> str:
                 raise
             except Exception as e:
                 last_error = e
+
+    # 尝试 6：无条件最后手段，去掉 format + 字幕（覆盖无 cookie 场景）
+    if has_format or has_subtitles:
+        fallback = dict(opts)
+        if has_format:
+            fallback.pop("format", None)
+            fallback.pop("merge_output_format", None)
+        if has_subtitles:
+            fallback = _strip_subtitle_opts(fallback)
+        try:
+            return _try_download(url, fallback)
+        except DownloadCancelledError:
+            raise
+        except Exception as e:
+            last_error = e
 
     assert last_error is not None
     raise last_error

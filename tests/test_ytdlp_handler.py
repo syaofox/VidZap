@@ -1,4 +1,5 @@
 """Tests for ytdlp_handler."""
+
 from pathlib import Path
 
 import pytest
@@ -6,23 +7,23 @@ import pytest
 from core.ytdlp_handler import (
     DOWNLOADS_DIR,
     MAX_TITLE_LENGTH,
-    _DEFAULT_HTTP_HEADERS,
     _format_eta,
     _format_speed,
     _is_format_error,
-    _is_http_error,
     _is_subtitle_error,
     _strip_subtitle_opts,
     check_ffmpeg,
     clear_completed_records,
     create_download_record,
     delete_download_record,
+    extract_info,
     find_existing_download,
     get_download_by_id,
     get_download_history,
     get_ytdlp_version,
     init_downloads_dir,
     normalize_url,
+    start_download,
     update_download_status,
 )
 
@@ -181,48 +182,6 @@ class TestRealWorldScenario:
         for key in ("title_dir", "filename"):
             component_bytes = components[key].encode("utf-8")
             assert len(component_bytes) < NAME_MAX
-
-
-# =============================================================================
-# 默认 HTTP 头部测试
-# =============================================================================
-
-
-class TestDefaultHttpHeaders:
-    def test_is_dict(self):
-        assert isinstance(_DEFAULT_HTTP_HEADERS, dict)
-
-    def test_has_required_keys(self):
-        required = {"User-Agent", "Accept", "Accept-Language"}
-        assert required.issubset(_DEFAULT_HTTP_HEADERS.keys())
-
-    def test_user_agent_is_chrome(self):
-        ua = _DEFAULT_HTTP_HEADERS["User-Agent"]
-        assert "Chrome" in ua and "Safari" in ua
-
-
-class TestIsHttpError:
-    @pytest.mark.parametrize(
-        ("msg", "status_code", "expected"),
-        [
-            ("HTTP Error 412: Precondition Failed", 412, True),
-            ("http error 412 precondition failed", 412, True),
-            ("HTTP Error 403: Forbidden", 412, False),
-            ("Some other error", 412, False),
-            ("", 412, False),
-            ("http error 412", 412, True),
-            ("HTTP Error 412", 412, True),
-            ("HTTP Error 500: Internal Server Error", 500, True),
-            ("http error 500", 500, True),
-            ("http error 412", 500, False),
-        ],
-    )
-    def test_detection(self, msg, status_code, expected):
-        assert _is_http_error(Exception(msg), status_code) == expected
-
-    def test_defaults_to_412(self):
-        assert _is_http_error(Exception("HTTP Error 412: Precondition Failed"))
-        assert not _is_http_error(Exception("HTTP Error 403: Forbidden"))
 
 
 # =============================================================================
@@ -518,3 +477,69 @@ class TestGetYtdlpVersion:
         version = get_ytdlp_version()
         assert isinstance(version, str)
         assert len(version) > 0
+
+
+class TestOptsDefaults:
+    """extract_info / start_download 的默认 opts 不含 extractor_args（使用 yt-dlp 默认 client）。"""
+
+    @pytest.mark.asyncio
+    async def test_extract_info_opts_structure(self, monkeypatch):
+        captured_opts: dict | None = None
+
+        def mock_io_bound(fn, url, opts):
+            nonlocal captured_opts
+            captured_opts = opts
+            raise ValueError("mock stop")
+
+        monkeypatch.setattr("core.ytdlp_handler.run.io_bound", mock_io_bound)
+
+        with pytest.raises(ValueError, match="mock stop"):
+            await extract_info("https://www.youtube.com/watch?v=test")
+
+        assert captured_opts is not None
+        assert "quiet" in captured_opts
+        assert "noplaylist" in captured_opts
+        assert "extractor_args" not in captured_opts
+
+    @pytest.mark.asyncio
+    async def test_extract_info_passes_cookiefile(self, monkeypatch):
+        captured_opts: dict | None = None
+
+        def mock_io_bound(fn, url, opts):
+            nonlocal captured_opts
+            captured_opts = opts
+            raise ValueError("mock stop")
+
+        monkeypatch.setattr("core.ytdlp_handler.run.io_bound", mock_io_bound)
+
+        url = "https://www.youtube.com/watch?v=test"
+        with pytest.raises(ValueError, match="mock stop"):
+            await extract_info(url, cookie_file="/tmp/cookies.txt")
+
+        assert captured_opts is not None
+        assert captured_opts.get("cookiefile") == "/tmp/cookies.txt"
+        assert "extractor_args" not in captured_opts
+
+    @pytest.mark.asyncio
+    async def test_start_download_opts_structure(self, monkeypatch):
+        captured_opts: dict | None = None
+
+        def mock_io_bound(fn, url, opts):
+            nonlocal captured_opts
+            captured_opts = opts
+            raise ValueError("mock stop")
+
+        monkeypatch.setattr("core.ytdlp_handler.run.io_bound", mock_io_bound)
+
+        with pytest.raises(ValueError, match="mock stop"):
+            await start_download(
+                url="https://www.youtube.com/watch?v=test",
+                format_id="best",
+                cookie_file=None,
+            )
+
+        assert captured_opts is not None
+        assert "quiet" in captured_opts
+        assert "noplaylist" in captured_opts
+        assert "format" in captured_opts
+        assert "extractor_args" not in captured_opts

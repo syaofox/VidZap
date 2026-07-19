@@ -51,8 +51,7 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 - **重复检测逐 URL**：`do_download()` / `do_note_download()` 使用 `split_existing_urls()` 区分新 URL 和已存在的 URL。弹窗提供"跳过/覆盖/取消"三个选项，不再全有全无。
 - **`batch_download()` 已从 `ytdlp_handler.py` 删除**（死代码，从未被调用）。批量下载统一走 `download_queue.enqueue()` 逐 URL。
 - **`download()` 和 `download_note()` 签名变更**：第一个参数改为 `urls: list[str]`，由调用方传入待下载 URL 列表（可能是过滤后的子集）。
-- **`_DEFAULT_HTTP_HEADERS`** 定义在 `ytdlp_handler.py` 模块级，包含 Chrome UA + Accept + Accept-Language，通过 `http_headers` 注入 yt-dlp opts。`extract_info()` 和 `start_download()` 均使用该常量。修改任一入口的 header 策略应同步更新两个位置。
-- **HTTP 412 防御**：`_is_http_error()` 检测 412 错误，在 `_download_sync()` 重试链第 4 级移除自定义 `http_headers` 回退到 yt-dlp 默认头。新增下载降级层时需更新该重试链的文档注释。若其他站点出现 412，排查顺序：检查 `_DEFAULT_HTTP_HEADERS` 是否过期 → 检查 Cookie 是否有效 → 检查 yt-dlp 版本。
+- **`_DEFAULT_HTTP_HEADERS` 已移除**（曾被用于应对 Bilibili 412，但自定义 UA 干扰 YouTube 的格式协商和登录态检测，现已完全删除。yt-dlp 使用默认头。）
 
 ## Docker 约束
 
@@ -69,7 +68,7 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 
 ```
 URL 输入 → extract_info() → 格式选择 → download_queue.enqueue() → _worker()
-  ├─ "video" → start_download() → _download_sync() [6级降级重试] (yt-dlp cookiefile)
+  ├─ "video" → start_download() → _download_sync() [5级降级重试] (yt-dlp cookiefile)
   └─ "douyin_note" → download_note_images()
                        ├─ note_info 已存在 → 跳过 Playwright，直接 httpx 下载 (注入 cookie)
                        └─ note_info 不存在 → NoteExtractor.extract() (Playwright, 注入 cookie)
