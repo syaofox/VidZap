@@ -1,132 +1,32 @@
 # AGENTS.md — VidZap
 
-## Project overview
+Python 3.13 视频下载工具（NiceGUI + yt-dlp），支持多站点、格式选择、批量下载、Cookie管理、Douyin笔记提取。
 
-VidZap is a Python 3.13 web application for downloading videos via yt-dlp, built with NiceGUI (FastAPI-based). It supports multi-site video extraction, format selection, batch download, cookie management, Douyin note (image+video slideshow) extraction via Playwright, and a download history page.
-
-## Project structure
-
-```
-src/
-  main.py                 # Entry point: NiceGUI app setup, routes
-  core/
-    db.py                 # SQLite database (downloads, cookies tables)
-    ytdlp_handler.py      # yt-dlp wrapper: extract_info, start_download, format logic
-    cookie_manager.py     # Cookie file + DB management per domain
-    download_queue.py     # Download queue: same-origin sequential, cross-origin parallel
-    browser_extractor.py  # NoteExtractor ABC, Playwright + CloakBrowser implementations
-    douyin_note.py        # Douyin note extraction and download
-    version.py            # App version from pyproject.toml
-  pages/
-    home.py               # Main page: URL input, analysis, format selection, download
-    history.py            # Download history with list/grid view, retry, preview
-    settings.py           # Cookie management page
-  components/             # (reserved for shared UI components)
-tests/                    # pytest tests: test_*.py
-```
-
-Runtime artifacts: `database.sqlite`, `downloads/`, `cookies/`, `.nicegui/` — all gitignored.
-
-## Commands
+## 关键命令
 
 ```bash
-./start.sh                        # Run the app (推荐)
-uv run python src/main.py        # Run the app（不通过脚本）
-make lint                         # or: uv run ruff check .
-make format                       # or: uv run ruff format .
-make type-check                   # or: MYPYPATH=src uv run mypy .
-make sync                         # or: uv run sync
-make playwright-setup             # Install Chromium + system deps (devcontainer)
-make post-start                   # Start Xvfb :99 (devcontainer)
-docker compose up -d              # Production deployment
-docker compose build              # Rebuild image
+./start.sh                  # 启动
+make lint                   # ruff check .
+make format                 # ruff format .
+make type-check             # mypy .
+uv run pytest tests/        # 测试
+make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 ```
 
-Single-file lint/type-check for faster feedback:
-```bash
-uv run ruff check src/core/douyin_note.py
-MYPYPATH=src uv run mypy src/core/download_queue.py
+## 非源码可见约束
+
+- **Timer 内必须检查** `ui.context.client._deleted` 再操作 UI；否则已销毁页面崩溃。
+- **Dialog 不要用** `dialog.on_submit` — 用 `ui.dialog()` + `ui.card()` context manager。
+- **不要直接调用** `start_download` / `download_note_images` — 全部通过 `download_queue.enqueue()`。
+- 重试时传 `progress_callback`，保证历史页面进度更新。
+- `file_path` 对 Douyin notes 是**目录**（不是文件），`/downloads-file/{id}/{filename}` 内部按 `is_dir()` 分支处理。
+- 安全：不记录密钥，Cookie 文件 gitignored，配置用环境变量，验证所有用户输入。
+- Page 模块导出 `render()` 函数供路由使用。
+
+## 数据流
+
 ```
-
-Testing: `uv run pytest tests/` (pytest is configured as a dev dependency). Test files go in `tests/test_*.py`.
-Coverage: `uv run coverage run --source=src -m pytest tests/ && uv run coverage report`
-
-## Code style
-
-- **Python 3.13**: Use `str | None` (not `Optional`), `dict`/`list` (not `Dict`/`List`), `Callable` from `collections.abc`.
-- **Line length**: 100 chars. Ruff rules: `E`, `F`, `I`, `N`, `W`, `UP`.
-- **Imports**: stdlib → third-party → local (enforced by ruff `I`). Use absolute imports: `from core.db import get_connection`.
-- **Naming**: `snake_case` functions/variables, `UPPER_CASE` constants, `_prefix` private functions. Page modules export `render()`.
-- **Types**: Type hints on all function signatures. `dict | None` for optional params. mypy: `warn_return_any=true`, `disallow_untyped_defs=false`.
-- **Error handling**: try/except for I/O and external calls. Catch broad `Exception` for yt-dlp. Use `finally` for cleanup. Log tracebacks with `traceback.print_exc()`.
-- **Security**: Never log secrets. Cookie files are gitignored. Use env vars for config. Validate all user inputs.
-
-## Key patterns
-
-### NiceGUI
-- Declarative UI with context managers: `with ui.card():`, `with ui.row():`.
-- Thread offloading: `asyncio.get_event_loop().run_in_executor(None, sync_fn)`.
-- Client storage: `app.storage.user[key]` with `storage_secret` in `ui.run()`.
-- Timers: `ui.timer(interval, callback)` for polling; `.deactivate()` to stop.
-- Timer callbacks must check `ui.context.client._deleted` before modifying UI.
-- Dialogs: `ui.dialog()` + `ui.card()` context managers; do not use `dialog.on_submit`.
-
-### Download concurrency
-- All downloads go through `core.download_queue.download_queue` (global singleton).
-- Same-origin downloads run sequentially; different origins run in parallel.
-- Use `await download_queue.enqueue(...)` — never call `start_download` directly.
-- Cancellation: `await download_queue.cancel(download_id)` sets an `asyncio.Event`.
-- Always pass `progress_callback` when enqueueing retries for history page updates.
-
-### Cookie domain normalization (`cookie_manager.py`)
-- `normalize_domain(domain)`: strips `www.` prefix, port, lowercases. `www.youtube.com:443` → `youtube.com`.
-- `extract_domain_from_input(text)`: accepts raw domain or full URL, returns normalized domain.
-- `is_valid_domain(domain)`: validates domain format (min 2 segments, valid chars).
-- `get_cookie_for_url(url)` normalizes the URL domain then matches with `.{domain}` suffix (subdomain-aware).
-- `save_cookie()` auto-normalizes before persisting.
-
-### Download retry chain (`ytdlp_handler.py`)
-- `_download_sync()` implements a 5-level fallback: cookie+format+subtitles → no subtitles → auto format → no cookie → no cookie+auto format.
-- `_is_format_error()`: detects "Requested format is not available".
-- `_is_subtitle_error()`: detects "Unable to download video subtitles" (429 rate limit).
-- `_strip_subtitle_opts()`: removes `writesubtitles`/`writeautomaticsub`/`subtitleslangs` from opts.
-- Subtitle downloads use `sleep_interval_subtitles = 1` (1s between each) to avoid 429.
-- **Filename truncation**: `MAX_TITLE_LENGTH = 80` limits title in `outtmpl` to 80 chars via `%(title).80s`, preventing `ENAMETOOLONG` (Errno 36) on filesystems with `NAME_MAX=255`.
-
-### Douyin note extraction (`browser_extractor.py` + `douyin_note.py`)
-- `NoteExtractor` ABC defines the interface; `PlaywrightNoteExtractor` is the current impl, `CloakBrowserNoteExtractor` is a placeholder.
-- Engine selection: `VIDZAP_BROWSER=playwright` (default) or `VIDZAP_BROWSER=cloakbrowser` (future).
-- `PlaywrightNoteExtractor` uses Playwright with Xvfb (non-headless) + `playwright-stealth`.
-- `_ensure_xvfb()` auto-starts Xvfb on `:99` and sets `DISPLAY` env var.
-- Visits Douyin homepage first to acquire fresh `__ac_signature` anti-bot cookies.
-- Intercepts API responses (`aweme_list`) for structured image+video data; falls back to DOM extraction.
-- `extract_note_images()` in `douyin_note.py` is a thin wrapper around the active extractor.
-- `download_note_images()` downloads all media to a directory; `file_path` in DB is a directory (not file).
-
-### Database
-- SQLite via `core.db.get_connection()` context manager (auto-commit, auto-close).
-- Schema changes: add `ALTER TABLE` in `init_db()` wrapped in try/except for idempotency.
-
-## File serving
-
-The `/downloads-file/{download_id}/{filename:path}` route handles both single-file and directory downloads. When `file_path` is a directory (Douyin notes), it resolves `{filename}` inside it. Uses `mimetypes.guess_type()` for correct content-type headers.
-
-## Deployment
-
-- Docker multi-stage build: `python:3.13-slim`, installs `ffmpeg`, `xvfb`, `gosu`, Playwright Chromium.
-- Xvfb is auto-started by `entrypoint.sh` before the app.
-- Runs as non-root user `nicevid` (UID 1000, Docker only).
-- Env vars: `NICEVID_DATA_DIR`, `NICEVID_STORAGE_SECRET`, `NICEVID_RELOAD`, `DISPLAY=:99`.
-- Change `NICEVID_STORAGE_SECRET` in `docker-compose.yml` before production use.
-
-## Key dependencies
-
-| Package            | Purpose                                |
-|--------------------|----------------------------------------|
-| nicegui 3.9        | Web UI framework (Vue + Quasar)        |
-| yt-dlp             | Video extraction & download            |
-| playwright         | Browser automation for Douyin notes    |
-| playwright-stealth | Anti-bot-detection for Playwright      |
-| httpx              | HTTP client for image/video downloads  |
-| fastapi            | HTTP routes (via NiceGUI)              |
-| pydantic           | Data validation                        |
+URL 输入 → extract_info() → 格式选择 → download_queue.enqueue() → _worker()
+  ├─ "video" → start_download() → _download_sync() [5级降级重试]
+  └─ "douyin_note" → download_note_images() → NoteExtractor.extract() → httpx 下载
+```
