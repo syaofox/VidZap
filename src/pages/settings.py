@@ -37,20 +37,25 @@ def render() -> None:
             rows = await run.io_bound(list_cookies)
             if getattr(_cookies_client, "_deleted", False):
                 return
-            cookie_table_ref["table"] = ui.table(
-                columns=[
-                    {"name": "domain", "label": "域名", "field": "domain"},
-                    {"name": "created_at", "label": "添加时间", "field": "created_at"},
-                ],
-                rows=rows,
-                row_key="domain",
-                selection="multiple",
-                pagination=10,
-            ).classes("w-full")
+            with cookie_table_container:
+                cookie_table_ref["table"] = ui.table(
+                    columns=[
+                        {"name": "domain", "label": "域名", "field": "domain"},
+                        {"name": "created_at", "label": "添加时间", "field": "created_at"},
+                    ],
+                    rows=rows,
+                    row_key="domain",
+                    selection="multiple",
+                    pagination=10,
+                ).classes("w-full")
 
-            with ui.row().classes("w-full justify-end gap-2 mt-4"):
-                ui.button("添加 Cookie", on_click=lambda: show_add_dialog()).props("color=primary")
-                ui.button("删除选中", on_click=lambda: delete_selected()).props("color=negative")
+                with ui.row().classes("w-full justify-end gap-2 mt-4"):
+                    ui.button("添加 Cookie", on_click=lambda: show_add_dialog()).props(
+                        "color=primary"
+                    )
+                    ui.button("删除选中", on_click=lambda: delete_selected()).props(
+                        "color=negative"
+                    )
 
         background_tasks.create(_load_cookies())
 
