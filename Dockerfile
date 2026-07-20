@@ -41,10 +41,8 @@ COPY pyproject.toml ./
 COPY entrypoint.sh /entrypoint.sh
 
 # Install Playwright Chromium and its system dependencies
-# Cache the browser binary so .venv changes don't force a re-download
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
-RUN --mount=type=cache,target=/app/.cache/ms-playwright,sharing=locked \
-    playwright install chromium && \
+RUN playwright install chromium && \
     playwright install-deps chromium
 
 # Data directories (only re-runs when their structure changes)
