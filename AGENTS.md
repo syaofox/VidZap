@@ -135,6 +135,26 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
   - 修改 `Dockerfile` 或 `.dockerignore` 后执行 `docker compose build --no-cache` 全量验证一次。
 - 资源限制：`docker-compose.yml` 已配置 `mem_limit: 2g` + `cpus: "4"`。Playwright/Chromium 内存峰值可达 800MB，加上 ffmpeg 转码很容易超过 1G，2G 保证功能可用不频繁 OOM。NAS 环境不要移除或大幅调高此限制。
 
+### Android 分享 API (`main.py`)
+
+- **路由**：`POST /api/share`（FastAPI 路由，通过 `@app.post` 注册在 `main.py`）
+- **请求体**：`{"url": "https://..."}`
+- **响应**：`{"status": "ok", "download_id": 123, "title": "...", "type": "video|douyin_note"}`
+- **核心函数**：`_do_share(url)` — 分类 URL、创建 DB 记录、入队 `download_queue`。
+- **视频默认格式**：`"bestvideo+bestaudio/best"`（跳过 UI 格式选择步骤）
+- **Douyin note**：调用 `extract_note_images()` 提取 → 入队 `task_type="douyin_note"`
+- **安全**：无内置认证（LAN 部署），敏感环境应通过反向代理（如 nginx basic auth）保护
+- **测试**：`tests/test_share_api.py` 使用 `unittest.mock.patch` mock `classify_urls`、`extract_info`、`extract_note_images`、`download_queue.enqueue`
+
+### Android 原生 App
+
+- **项目目录**：`android/`（Gradle + Kotlin 项目）
+- **包名**：`com.vidzap.share`
+- **功能**：通过 `ACTION_SEND` intent filter 接收系统分享链接 → 提取 URL → `POST /api/share` → Toast 提示结果
+- **启动**：首次使用需在 App 内配置 VidZap 服务器地址（`SharedPreferences` 持久化）
+- **构建**：用 Android Studio 打开 `android/` 目录即可同步并构建 APK
+- **无后台服务**：App 仅在用户主动分享时瞬间唤醒，执行请求后立即 finish
+
 ## 数据流
 
 ```
