@@ -49,6 +49,7 @@ def split_existing_urls(urls: list[str]) -> tuple[list[str], list[dict]]:
 def render() -> None:
     """渲染首页"""
     ui.on_exception(lambda e: ui.notify(f"页面错误: {e}", type="negative"))
+    ui.add_head_html('<meta name="referrer" content="no-referrer">')
 
     # 前向声明: 在后续 with 语句中实际赋值
     supported_sites_dialog: ui.dialog

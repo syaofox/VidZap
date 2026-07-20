@@ -158,9 +158,13 @@ def _extract_sync(url: str, opts: dict) -> dict:
     subtitle_langs = sorted(k for k in subtitles_dict if k not in _non_lang_keys)
     auto_subtitle_langs = sorted(k for k in auto_subs_dict if k not in _non_lang_keys)
 
+    thumbnail_url = info.get("thumbnail")
+    if thumbnail_url and isinstance(thumbnail_url, str) and thumbnail_url.startswith("http://"):
+        thumbnail_url = "https://" + thumbnail_url[7:]
+
     return {
         "title": info.get("title", "Unknown"),
-        "thumbnail": info.get("thumbnail"),
+        "thumbnail": thumbnail_url,
         "duration": info.get("duration"),
         "formats": formats,
         "has_subtitles": bool(info.get("subtitles")),
@@ -355,7 +359,6 @@ async def start_download(
             {
                 "key": "FFmpegThumbnailsConvertor",
                 "format": "jpg",
-                "when": "before_dl",
             }
         )
 

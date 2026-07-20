@@ -119,6 +119,8 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - **`download()` 和 `download_note()` 签名变更**：第一个参数改为 `urls: list[str]`，由调用方传入待下载 URL 列表（可能是过滤后的子集）。
 - **`_DEFAULT_HTTP_HEADERS` 已移除**（曾被用于应对 Bilibili 412，但自定义 UA 干扰 YouTube 的格式协商和登录态检测，现已完全删除。yt-dlp 使用默认头。）
 - **`pyproject.toml` 变动必须同步 `uv.lock`** — 修改 `pyproject.toml`（含版本号）后执行 `uv lock` 生成新 `uv.lock`。提交时 `pyproject.toml` 和 `uv.lock` 必须成对提交，否则 `uv sync --frozen` 会失败。
+- **yt-dlp 最低版本 `>=2026.7.0`** — 2026.03.17 的 Bilibili extractor 存在 `HTTP 412 Precondition Failed` bug，无法提取 Bilibili 视频信息和封面。`FFmpegThumbnailsConvertor` 勿设 `when: "before_dl"`，使用默认 `after_dl`。
+- **Bilibili CDN 封面 Referer 拦截** — Bilibili 的 `i1.hdslb.com` CDN 检查 `Referer` 头，非 Bilibili 域名（如 `localhost:8080`）返回 403。在 `home.py:render()` 已添加 `<meta name="referrer" content="no-referrer">` 阻止浏览器发送 Referer，确保封面正常显示。若新增页面含有 Bilibili 图片也要加上此 meta。`_DEFAULT_HTTP_HEADERS` 方案因干扰 YouTube 已废弃。
 
 ## Docker 约束
 
