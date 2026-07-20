@@ -24,8 +24,8 @@ _DOUYIN_JINGXUAN_PATTERN = re.compile(
     r"https?://(?:www\.)?douyin\.com/jingxuan"
 )
 
-# 已知不被 yt-dlp 直接支持的 Douyin URL 格式
-_UNSUPPORTED_DOUYIN_PATTERNS: list[re.Pattern] = [
+# 需要 normalize_url 处理的 URL 模式（各站点不被 yt-dlp 直接支持的格式）
+_NORMALIZE_PATTERNS: list[re.Pattern] = [
     _DOUYIN_JINGXUAN_PATTERN,
 ]
 
@@ -37,7 +37,7 @@ def normalize_url(url: str) -> str:
       https://www.douyin.com/jingxuan?modal_id=xxx
         → https://www.douyin.com/video/xxx
     """
-    for pattern in _UNSUPPORTED_DOUYIN_PATTERNS:
+    for pattern in _NORMALIZE_PATTERNS:
         if pattern.match(url):
             parsed = urlparse(url)
             params = parse_qs(parsed.query)
@@ -183,6 +183,7 @@ async def start_download(
     cancel_event: asyncio.Event | None = None,
 ) -> str:
     """开始下载，支持格式合并"""
+    url = normalize_url(url)
     init_downloads_dir()
     has_ffmpeg = check_ffmpeg()
 

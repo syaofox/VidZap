@@ -521,6 +521,29 @@ class TestOptsDefaults:
         assert "extractor_args" not in captured_opts
 
     @pytest.mark.asyncio
+    async def test_start_download_normalizes_url(self, monkeypatch):
+        captured_url: str | None = None
+
+        def mock_download_sync(url, opts):
+            nonlocal captured_url
+            captured_url = url
+            raise ValueError("mock stop")
+
+        monkeypatch.setattr(
+            "core.ytdlp_handler._download_sync", mock_download_sync
+        )
+
+        jingxuan_url = "https://www.douyin.com/jingxuan?modal_id=7635097254491251362"
+        with pytest.raises(ValueError, match="mock stop"):
+            await start_download(
+                url=jingxuan_url,
+                format_id="best",
+                cookie_file=None,
+            )
+
+        assert captured_url == "https://www.douyin.com/video/7635097254491251362"
+
+    @pytest.mark.asyncio
     async def test_start_download_opts_structure(self, monkeypatch):
         captured_opts: dict | None = None
 
