@@ -92,8 +92,8 @@ class TestIsValidDomain:
 
 
 class TestCookieDir:
-    def test_default_dir(self):
-        assert str(get_cookie_dir()).endswith("cookies")
+    def test_default_dir(self, _temp_db_dir):
+        assert get_cookie_dir() == _temp_db_dir / "cookies"
 
     def test_env_var_override(self, monkeypatch, tmp_path):
         target = tmp_path / "mycookies"

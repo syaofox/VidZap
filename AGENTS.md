@@ -74,7 +74,7 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 | `NICEVID_STORAGE_SECRET` | 硬编码默认值 | session 加密密钥 |
 | `NICEVID_RELOAD` | `false` | 热重载（仅开发） |
 | `NICEVID_PORT` / `NICEVID_HOST` | `8080` / `0.0.0.0` | 监听地址 |
-| `VIDZAP_COOKIE_DIR` | `cookies/` | Cookie 文件存储目录 |
+| `VIDZAP_COOKIE_DIR` | `{NICEVID_DATA_DIR}/cookies` | Cookie 文件存储目录（默认跟随 `NICEVID_DATA_DIR`） |
 | `VIDZAP_BROWSER` | `playwright` | 浏览器引擎（也接受 `cloakbrowser`） |
 
 ## 非源码可见约束
@@ -103,7 +103,7 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - `file_path` 对 Douyin notes 是**目录**（不是文件），`/downloads-file/{id}/{filename}` 内部按 `is_dir()` 分支处理。
 - 安全：不记录密钥，Cookie 文件 gitignored，配置用环境变量，验证所有用户输入。
 - Page 模块导出 `render()` 函数供路由使用。
-- Cookie 目录通过 `get_cookie_dir()` 获取（`cookie_manager.py`），由 `VIDZAP_COOKIE_DIR` 环境变量控制，默认 `cookies/`。
+- Cookie 目录通过 `get_cookie_dir()` 获取（`cookie_manager.py`），由 `VIDZAP_COOKIE_DIR` 环境变量控制，未设置时从 `NICEVID_DATA_DIR` 派生默认为 `{NICEVID_DATA_DIR}/cookies`。
 - DB 中 `cookie_file` 存相对路径 `{domain}.txt`，读取时通过 `_resolve_cookie_path()` 拼装绝对路径（`cookie_manager.py`）。
 - `save_cookie()` 返回 `False` 表示内容无效（无法解析为 Netscape 或原始 Cookie 格式），保存失败。UI 调用处必须检查返回值，返回 `False` 时提示用户而不是显示"保存成功"。
 - `_CancelledError` 统一在 `browser_extractor.py` 定义，`douyin_note.py` 从 `browser_extractor` 导入。
@@ -125,7 +125,7 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - HEALTHCHECK：`python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"`，间隔 30s。
 - Xvfb 不由 `entrypoint.sh` 启动，而是由 `browser_extractor._ensure_xvfb()` 在 Douyin 笔记提取时按需启动。
 - Playwright Chromium 安装路径：`/app/.cache/ms-playwright`（`PLAYWRIGHT_BROWSERS_PATH`）。
-- 数据持久化卷：`downloads/`（下载文件）、`cookies/`（Cookie 文件）、`data/`（SQLite DB + NiceGUI storage）。
+- 数据持久化卷：`downloads/`（下载文件）、`data/`（SQLite DB + NiceGUI storage + Cookie 文件）。
 - Docker 构建分两阶段：builder 安装依赖 → final 复制 `.venv` + 源码 + Playwright。
 - **构建优化（层序 + cache mount）**：
   - Dockerfile 使用 3 个 `--mount=type=cache`：uv 包下载（`/root/.cache/uv`）、apt 包（`/var/cache/apt` + `/var/lib/apt/lists`）、Playwright Chromium 二进制（`/app/.cache/ms-playwright`）。修改依赖时不必从零下载。

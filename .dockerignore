@@ -17,6 +17,5 @@ README.md
 .env
 database.sqlite
 downloads
-cookies
 .nicegui
 data

@@ -48,8 +48,8 @@ RUN --mount=type=cache,target=/app/.cache/ms-playwright,sharing=locked \
     playwright install-deps chromium
 
 # Data directories (only re-runs when their structure changes)
-RUN mkdir -p downloads cookies data && \
-    chown -R nicevid:nicevid downloads cookies data
+RUN mkdir -p downloads data && \
+    chown -R nicevid:nicevid downloads data
 
 # Application source (changes most frequently — comes last for caching)
 COPY src/ src/

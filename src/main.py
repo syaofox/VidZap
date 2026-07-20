@@ -15,7 +15,6 @@ from pages import history, home, settings
 
 # 创建必要的目录
 Path("downloads").mkdir(exist_ok=True)
-Path("cookies").mkdir(exist_ok=True)
 
 Path(os.environ.get("NICEVID_DATA_DIR", "data")).mkdir(parents=True, exist_ok=True)
 

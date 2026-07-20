@@ -40,7 +40,7 @@ ENV/
 *.db
 
 # Cookies (敏感文件)
-cookies/
+data/cookies/
 
 # Downloads
 downloads/

@@ -24,7 +24,7 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 
 # 创建必要目录
-mkdir -p "$DATA_DIR" "$APP_DIR/downloads" "$APP_DIR/cookies"
+mkdir -p "$DATA_DIR" "$APP_DIR/downloads"
 echo -e "${GREEN}✓${NC} 目录已就绪"
 
 # 启动 Xvfb（用于抖音笔记提取）

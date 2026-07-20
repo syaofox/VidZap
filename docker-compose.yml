@@ -12,7 +12,6 @@ services:
       - NICEGUI_STORAGE_PATH=/app/data/.nicegui
     volumes:
       - ./downloads:/app/downloads
-      - ./cookies:/app/cookies
       - ./data:/app/data
     restart: unless-stopped
     # 资源限制：NAS 共享环境防止单容器拖垮整机

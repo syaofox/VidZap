@@ -12,7 +12,10 @@ _COOKIE_DIR_ENV = "VIDZAP_COOKIE_DIR"
 
 def get_cookie_dir() -> Path:
     override = os.environ.get(_COOKIE_DIR_ENV)
-    return Path(override) if override else Path("cookies")
+    if override:
+        return Path(override)
+    data_dir = os.environ.get("NICEVID_DATA_DIR", "data")
+    return Path(data_dir) / "cookies"
 
 
 def normalize_domain(domain: str) -> str:
