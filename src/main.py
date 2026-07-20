@@ -210,11 +210,13 @@ if __name__ in {"__main__", "__mp_main__"}:
         "NICEVID_STORAGE_SECRET", "nicevid-secret-key-change-in-production"
     )
 
+    _icon_path = Path(__file__).parent / 'static' / 'favicon.png'
+
     ui.run(
         host="0.0.0.0",
         port=8080,
         title="VidZap",
         reload=_reload,
-        favicon="🎬",
+        favicon=str(_icon_path),
         storage_secret=_storage_secret,
     )
