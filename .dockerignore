@@ -7,6 +7,12 @@ __pycache__
 .github
 .vscode
 docs
+doc
+tests
+start.sh
+Makefile
+AGENTS.md
+README.md
 *.log
 .env
 database.sqlite

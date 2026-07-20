@@ -62,6 +62,10 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 - Playwright Chromium 安装路径：`/app/.cache/ms-playwright`（`PLAYWRIGHT_BROWSERS_PATH`）。
 - 数据持久化卷：`downloads/`（下载文件）、`cookies/`（Cookie 文件）、`data/`（SQLite DB + NiceGUI storage）。
 - Docker 构建分两阶段：builder 安装依赖 → final 复制 `.venv` + 源码 + Playwright。
+- **构建优化（层序 + cache mount）**：
+  - Dockerfile 使用 3 个 `--mount=type=cache`：uv 包下载（`/root/.cache/uv`）、apt 包（`/var/cache/apt` + `/var/lib/apt/lists`）、Playwright Chromium 二进制（`/app/.cache/ms-playwright`）。修改依赖时不必从零下载。
+  - 层序按变更频率排列：用户创建 → `pyproject.toml`/`entrypoint.sh` → playwright install → `COPY src/`（最后）。代码变更只 invalidate 源码层，不触发依赖重装。
+  - 修改 `Dockerfile` 或 `.dockerignore` 后执行 `docker compose build --no-cache` 全量验证一次。
 - 资源限制：`docker-compose.yml` 已配置 `mem_limit: 2g` + `cpus: "4"`。Playwright/Chromium 内存峰值可达 800MB，加上 ffmpeg 转码很容易超过 1G，2G 保证功能可用不频繁 OOM。NAS 环境不要移除或大幅调高此限制。
 
 ## 数据流

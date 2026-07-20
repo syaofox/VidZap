@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.13-slim AS builder
 
 RUN apt-get update && \
@@ -11,14 +12,19 @@ WORKDIR /app
 COPY pyproject.toml uv.lock .python-version ./
 # placeholder so uv sync can inspect the project
 RUN mkdir -p src/core src/pages && \
-    touch src/__init__.py src/core/__init__.py src/pages/__init__.py && \
+    touch src/__init__.py src/core/__init__.py src/pages/__init__.py
+
+# Cache uv package downloads so dependency changes don't re-download from PyPI
+RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 FROM python:3.13-slim
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg gosu xvfb && \
-    rm -rf /var/lib/apt/lists/*
+# Cache apt archives so system dep changes don't re-download
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg gosu xvfb
 
 COPY --from=builder /root/.local/bin/uv /usr/local/bin/uv
 COPY --from=builder /app/.venv /app/.venv
@@ -26,23 +32,27 @@ ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH"
 
 WORKDIR /app
 
-# Install Playwright Chromium browser and its system dependencies
-# Done before copying source code to leverage Docker layer caching:
-# playwright only reinstalls when .venv (dependencies) change, not on code changes
+# User/group setup (rarely changes — placed early for layer caching)
+RUN groupadd -g 1000 nicevid && \
+    useradd -u 1000 -g nicevid -m nicevid
+
+# Project metadata and entrypoint (rarely changes)
+COPY pyproject.toml ./
+COPY entrypoint.sh /entrypoint.sh
+
+# Install Playwright Chromium and its system dependencies
+# Cache the browser binary so .venv changes don't force a re-download
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
-RUN playwright install chromium && \
+RUN --mount=type=cache,target=/app/.cache/ms-playwright,sharing=locked \
+    playwright install chromium && \
     playwright install-deps chromium
 
-# Application source (changes most frequently, comes last for caching)
+# Data directories (only re-runs when their structure changes)
+RUN mkdir -p downloads cookies data && \
+    chown -R nicevid:nicevid downloads cookies data
+
+# Application source (changes most frequently — comes last for caching)
 COPY src/ src/
-COPY pyproject.toml ./
-
-RUN groupadd -g 1000 nicevid && \
-    useradd -u 1000 -g nicevid -m nicevid && \
-    mkdir -p downloads cookies data && \
-    chown -R nicevid:nicevid /app
-
-COPY entrypoint.sh /entrypoint.sh
 
 EXPOSE 8080
 
