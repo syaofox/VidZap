@@ -5,13 +5,81 @@ Python 3.13 视频下载工具（NiceGUI + yt-dlp），支持多站点、格式�
 ## 关键命令
 
 ```bash
-./start.sh                  # 启动
 make lint                   # ruff check .
 make format                 # ruff format .
 make type-check             # mypy .
-uv run pytest tests/        # 测试
-make playwright-setup       # 安装 Playwright Chromium（devcontainer）
+uv run pytest tests/        # 全量测试
+uv run pytest tests/ -v -k test_name  # 单个测试
+docker compose build        # Docker 构建
+docker compose up -d        # Docker 启动
+uv lock                     # pyproject.toml 变更后同步 uv.lock
 ```
+
+## 代码约定
+
+### 命名
+- 函数/变量: `snake_case`，私有加 `_` 前缀（如 `_download_sync`）
+- 类: `PascalCase`（如 `DownloadCancelledError`，`PlaywrightNoteExtractor`）
+- 模块级常量: `UPPER_SNAKE_CASE`
+- Test 类: `TestPascalCase`，方法: `snake_case`
+
+### 导入
+- 绝对导入优先: `from core.db import get_connection`
+- 循环引用用惰性导入: 在函数体内 `from core.ytdlp_handler import start_download`
+- 类型注解用 `collections.abc`（`Callable`，`Iterator`），不用 `typing.*`
+- Union 用 `X | None` 语法（Python 3.10+）
+
+### 类型注解
+- 所有 `async def` 和公开函数必须有返回类型注解
+- mypy: `warn_return_any = true`，`disallow_untyped_defs = false`
+
+### 错误处理
+- 自定义异常: `DownloadCancelledError`（`ytdlp_handler.py`），`_CancelledError`（`browser_extractor.py`，供 `douyin_note.py` 导入）
+- 取消异常必须透传: `except DownloadCancelledError: raise`
+- 下载降级重试（`_download_sync`）: 原始 → 去字幕 → 去格式 → 去 cookie → 去 cookie+格式 — 逐级回退
+- 日志: `logger.exception()` 记录非预期异常的完整 traceback
+
+### 数据库（SQLite）
+- 访问模式: `with get_connection() as conn:`，返回 `sqlite3.Row`
+- 表: `cookies`（domain UNIQUE），`downloads`（url/title/status/file_path 等）
+- 迁移: `init_db()` 用 `ALTER TABLE ... ADD COLUMN` 包 try/except，幂等
+- 测试: `conftest.py` 的 `_temp_db_dir` fixture 自动隔离每个测试的数据库
+
+### 测试约定
+- 类容器: `class TestFeatureName:`，方法为测试
+- 异步测试加 `@pytest.mark.asyncio`，使用 `pytest-asyncio`
+- Mocking: `monkeypatch.setattr` + `unittest.mock.patch`，避免 mock 整个模块
+- `@pytest.mark.parametrize` 用于数据驱动测试
+- DB 隔离: `_temp_db_dir`（autouse fixture）猴子补丁 `NICEVID_DATA_DIR`
+- `setup_method()` 内调用 `init_db()` + `init_cookie_dir()`
+
+### 异步并发
+- UI 上下文: 用 `background_tasks.create(coro())`，禁止用 `asyncio.create_task()`
+- 基础设施模块: 可用 `asyncio.ensure_future()`（如 `DownloadQueue.enqueue()`）
+- 并发控制: `asyncio.Semaphore(1)` 序列化提取防限流，`asyncio.Event` 做取消信号，`asyncio.Lock` 保护共享状态
+- I/O 卸载: `await run.io_bound(sync_fn, args...)`，不用 `run_in_executor`
+- 超时: `await asyncio.wait_for(run.io_bound(...), timeout=60)`
+
+### 页面模式
+- 每个页面模块导出 `def render() -> None`
+- 函数开头设异常处理: `ui.on_exception(lambda e: ui.notify(f"页面错误: {e}", type="negative"))`
+- 重数据加载: 先用骨架屏交付，`background_tasks.create()` 中异步加载
+- 异步加载中定期检查 `getattr(_client, "_deleted", False)`（双守卫模式）
+
+### 环境变量
+
+| 变量 | 默认值 | 用途 |
+|------|--------|------|
+| `NICEVID_DATA_DIR` | `.` | SQLite + NiceGUI 存储路径 |
+| `NICEVID_STORAGE_SECRET` | 硬编码默认值 | session 加密密钥 |
+| `NICEVID_RELOAD` | `false` | 热重载（仅开发） |
+| `NICEVID_PORT` / `NICEVID_HOST` | `8080` / `0.0.0.0` | 监听地址 |
+| `VIDZAP_COOKIE_DIR` | `cookies/` | Cookie 文件存储目录 |
+| `VIDZAP_BROWSER` | `playwright` | 浏览器引擎（也接受 `cloakbrowser`） |
+
+### 已知技术债务
+- `db.py` 中 `DB_PATH` 模块级变量在 import 时绑定，`_db_path()` 函数动态计算，测试中修改 `NICEVID_DATA_DIR` 后 `DB_PATH` 不更新
+- `src/pages/components/` 包存在但为空（dead code）
 
 ## 非源码可见约束
 
@@ -26,8 +94,8 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 - **模块级变量是所有用户共享的** — NiceGUI 是单进程，模块级 `list`/`dict` 在所有用户和标签页间共享。需要隔离时使用 `app.storage.user`（按用户持久化）或 `@ui.page` 内的局部变量。
 - **`@ui.page(response_timeout=N)` 控制页面构建超时** — 默认 3 秒，如果页面构建耗时较长（DB 查询、API 调用等），应在页面函数内通过 `background_tasks.create()` 异步加载，骨架 UI 立刻交付。
 - **`app.timer` 用于全局非 UI 定时器** — 不绑定到任何页面上下文，适用于后端周期性任务。`ui.timer` 是 UI 元素，绑定到当前页面，页面销毁后停止。
-- **`ui.on_exception(handler)` 注册页内异常处理** — 在 HTML 已发送给浏览器后发生的异常（按钮点击、timer 回调）会经过此处理器，可用来显示错误通知或对话框。
 - **`ui.query('body')` 进行全局样式** — Python 优先，不要用 `ui.add_head_html('<style>...</style>')` 做页面级样式，改用 `ui.query('body').classes('bg-grey-2')`。注意 `ui.query()` 必须在 `@ui.page` 函数内调用，不能在模块顶层作用域执行。
+- **`ui.on_exception(handler)` 注册页内异常处理** — 在 HTML 已发送给浏览器后发生的异常（按钮点击、timer 回调）会经过此处理器，可用来显示错误通知或对话框。
 - **`result = await element.run_method(...)` / `await element.get_computed_prop(...)`** 可与前端交互获取返回值。
 - **`@ui.refreshable` 用于局部 UI 重建** — 对需要定期刷新的 UI 片段使用，支持 awaitable refresh，支持参数传递。
 - **`app.add_media_files()` 流式服务下载文件** — 对于视频/音频等大文件使用 `add_media_files()` 而非 `add_static_files()`，以支持 Range 请求和流式传输。
@@ -77,5 +145,5 @@ URL 输入 → extract_info() → 格式选择 → download_queue.enqueue() → 
   └─ "douyin_note" → download_note_images()
                        ├─ note_info 已存在 → 跳过 Playwright，直接 httpx 下载 (注入 cookie)
                        └─ note_info 不存在 → NoteExtractor.extract() (Playwright, 注入 cookie)
-                                            → httpx 下载 (注入 cookie)
+                                             → httpx 下载 (注入 cookie)
 ```
