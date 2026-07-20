@@ -138,19 +138,21 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 ### Android 分享 API (`main.py`)
 
 - **路由**：`POST /api/share`（FastAPI 路由，通过 `@app.post` 注册在 `main.py`）
-- **请求体**：`{"url": "https://..."}`
-- **响应**：`{"status": "ok", "download_id": 123, "title": "...", "type": "video|douyin_note"}`
-- **核心函数**：`_do_share(url)` — 分类 URL、创建 DB 记录、入队 `download_queue`。
-- **视频默认格式**：`"bestvideo+bestaudio/best"`（跳过 UI 格式选择步骤）
-- **Douyin note**：调用 `extract_note_images()` 提取 → 入队 `task_type="douyin_note"`
+- **两阶段流程**：
+  - **阶段一（分析）**：`{"url": "..."}` → `{"status": "analyzed", "type": "video", "title": "...", "thumbnail": "...", "duration": ..., "formats": [{label, format_id, ext, filesize, vcodec, acodec}, ...]}`
+  - **阶段二（下载）**：`{"url": "...", "format_id": "..."}` → `{"status": "ok", "download_id": 123, "title": "...", "type": "video"}`
+- **Douyin note**：始终单阶段自动下载，返回 `{"status": "ok", "download_id": 123, "title": "...", "type": "douyin_note"}`
+- **核心函数**：`_do_share(url, format_id=None)` — 无 format_id 时分析返回推荐格式（调 `get_suggested_formats`），有时入队下载
+- **推荐格式**：`get_suggested_formats(formats)` 在 `ytdlp_handler.py`，按 ffmpeg 可用性生成 1080p/720p/仅音频等精简列表
+- **Android 交互**：阶段一返回后弹出 AlertDialog 单选列表 → 用户选择 → 阶段二携带 format_id 提交
 - **安全**：无内置认证（LAN 部署），敏感环境应通过反向代理（如 nginx basic auth）保护
-- **测试**：`tests/test_share_api.py` 使用 `unittest.mock.patch` mock `classify_urls`、`extract_info`、`extract_note_images`、`download_queue.enqueue`
+- **测试**：`tests/test_share_api.py` 使用 `unittest.mock.patch` mock `classify_urls`、`extract_info`、`extract_note_images`、`download_queue.enqueue`、`get_suggested_formats`
 
 ### Android 原生 App
 
 - **项目目录**：`android/`（Gradle + Kotlin 项目）
 - **包名**：`com.vidzap.share`
-- **功能**：通过 `ACTION_SEND` intent filter 接收系统分享链接 → 提取 URL → `POST /api/share` → Toast 提示结果
+- **功能**：通过 `ACTION_SEND` intent filter 接收系统分享链接 → 提取 URL → `POST /api/share` 分析 → AlertDialog 列表选择画质 → `POST /api/share` 带 format_id → Toast 提示结果
 - **启动**：首次使用需在 App 内配置 VidZap 服务器地址（`SharedPreferences` 持久化）
 - **构建**：用 Android Studio 打开 `android/` 目录即可同步并构建 APK
 - **无后台服务**：App 仅在用户主动分享时瞬间唤醒，执行请求后立即 finish
@@ -163,5 +165,11 @@ URL 输入 → extract_info() → 格式选择 → download_queue.enqueue() → 
   └─ "douyin_note" → download_note_images()
                        ├─ note_info 已存在 → 跳过 Playwright，直接 httpx 下载 (注入 cookie)
                        └─ note_info 不存在 → NoteExtractor.extract() (Playwright, 注入 cookie)
-                                             → httpx 下载 (注入 cookie)
+                                              → httpx 下载 (注入 cookie)
+
+Android 分享 API 数据流：
+  POST /api/share {"url"} → _do_share(url) → classify → extract_info → get_suggested_formats
+    → return {status:"analyzed", formats: [...]}  (Android AlertDialog 选择)
+  POST /api/share {"url", "format_id"} → _do_share(url, format_id)
+    → create_download_record → download_queue.enqueue()
 ```

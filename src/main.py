@@ -14,7 +14,7 @@ from nicegui import app, ui
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.db import init_db
-from core.ytdlp_handler import get_download_by_id
+from core.ytdlp_handler import get_download_by_id, get_suggested_formats
 from pages import history, home, settings
 
 logger = logging.getLogger(__name__)
@@ -53,10 +53,16 @@ def serve_download_file(download_id: int, filename: str):
 # =============================================================================
 
 
-async def _do_share(url: str) -> dict:
-    """处理分享 URL 的核心逻辑：分类、创建记录、入队下载。"""
+async def _do_share(url: str, format_id: str | None = None) -> dict:
+    """处理分享 URL。
+
+    两阶段设计：
+    - 无 format_id（阶段一）：分析 URL，返回可用格式（视频）/ 直接下载（笔记）
+    - 有 format_id（阶段二）：用指定格式入队下载。
+    """
     from core.cookie_manager import get_cookie_for_url
     from core.ytdlp_handler import create_download_record
+    from core.ytdlp_handler import extract_info as _extract_info
     from pages.home import classify_urls
 
     url_type = classify_urls([url])
@@ -86,34 +92,53 @@ async def _do_share(url: str) -> dict:
         )
         return {"status": "ok", "download_id": dl_id, "title": title, "type": "douyin_note"}
 
-    # 视频下载（默认最佳画质）
-    from core.download_queue import download_queue
-    from core.ytdlp_handler import extract_info as _extract_info
+    # ---- 视频 ----
+    if format_id:
+        # 阶段二：用指定格式入队下载
+        from core.download_queue import download_queue
 
-    title = url
-    thumbnail = ""
-    try:
-        info = await asyncio.wait_for(_extract_info(url, cookie), timeout=30)
-        title = info.get("title") or url
-        thumbnail = info.get("thumbnail") or ""
-    except Exception:
-        pass
+        title = url
+        thumbnail = ""
+        try:
+            info = await asyncio.wait_for(_extract_info(url, cookie), timeout=30)
+            title = info.get("title") or url
+            thumbnail = info.get("thumbnail") or ""
+        except Exception:
+            pass
 
-    format_id = "bestvideo+bestaudio/best"
-    dl_id = create_download_record(url, title, thumbnail, format_id)
-    await download_queue.enqueue(
-        url=url,
-        format_id=format_id,
-        cookie_file=cookie,
-        write_thumbnail=True,
-        download_id=dl_id,
-    )
-    return {"status": "ok", "download_id": dl_id, "title": title, "type": "video"}
+        dl_id = create_download_record(url, title, thumbnail, format_id)
+        await download_queue.enqueue(
+            url=url,
+            format_id=format_id,
+            cookie_file=cookie,
+            write_thumbnail=True,
+            download_id=dl_id,
+        )
+        return {"status": "ok", "download_id": dl_id, "title": title, "type": "video"}
+
+    # 阶段一：分析 URL，返回可用格式
+    info = await asyncio.wait_for(_extract_info(url, cookie), timeout=30)
+    title = info.get("title") or url
+    thumbnail = info.get("thumbnail") or ""
+    formats = get_suggested_formats(info.get("formats", []))
+    return {
+        "status": "analyzed",
+        "type": "video",
+        "title": title,
+        "thumbnail": thumbnail,
+        "duration": info.get("duration"),
+        "formats": formats,
+    }
 
 
 @app.post("/api/share")
 async def share_url(request: Request) -> JSONResponse:
-    """Android 分享 API：接受 JSON {"url": "..."}，入队下载后返回 download_id。"""
+    """Android 分享 API。
+
+    两阶段流程：
+    1. POST {"url": "..."} → 分析 URL，返回可用格式列表（`status: "analyzed"`）
+    2. POST {"url": "...", "format_id": "..."} → 用指定格式入队下载（`status: "ok"`）
+    """
     try:
         body = await request.json()
     except Exception:
@@ -136,8 +161,12 @@ async def share_url(request: Request) -> JSONResponse:
             status_code=422,
         )
 
+    format_id = body.get("format_id")
+    if format_id is not None:
+        format_id = str(format_id).strip()
+
     try:
-        result = await _do_share(url)
+        result = await _do_share(url, format_id=format_id)
         return JSONResponse(result)
     except ValueError as e:
         return JSONResponse(

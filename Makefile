@@ -1,4 +1,4 @@
-.PHONY: post-create post-start test-tools init sync lint format type-check gitignore freeze dev-tools ensure-ipykernel playwright-setup
+.PHONY: post-create post-start test-tools init sync lint format type-check gitignore freeze dev-tools ensure-ipykernel playwright-setup android-build android-install
 
 # Post-create command: run tool verification, init project, and sync dependencies
 post-create: test-tools init ensure-ipykernel sync playwright-setup
@@ -98,3 +98,34 @@ freeze:
 	@echo "# Generated on $$(date)" > /tmp/requirements.txt
 	@uv pip freeze >> /tmp/requirements.txt
 	@echo "✓ Dependencies frozen (log: /tmp/requirements.txt)"
+
+# Build Android APK (debug)
+android-build:
+	@echo "Building Android APK (debug)..."
+	@( \
+		cd android; \
+		export ANDROID_HOME=$$(grep '^sdk\.dir' local.properties 2>/dev/null | cut -d= -f2); \
+		if [ -z "$$ANDROID_HOME" ]; then \
+			echo "❌ ANDROID_HOME not found. Check android/local.properties"; \
+			exit 1; \
+		fi; \
+		export PATH="$$ANDROID_HOME/build-tools/$$(ls $$ANDROID_HOME/build-tools/ | sort -V | tail -1):$$PATH"; \
+		./gradlew assembleDebug --no-daemon 2>&1; \
+	) | tail -5; \
+	APK=android/app/build/outputs/apk/debug/app-debug.apk; \
+	if [ -f "$$APK" ]; then \
+		echo "✓ APK built: $$APK"; \
+		ls -lh "$$APK"; \
+	else \
+		echo "❌ Build failed"; \
+	fi
+
+# Install APK to connected device (debug)
+android-install: android-build
+	@APK=android/app/build/outputs/apk/debug/app-debug.apk; \
+	if [ ! -f "$$APK" ]; then \
+		echo "❌ APK not found. Build first."; \
+		exit 1; \
+	fi; \
+	echo "Installing APK..."; \
+	adb install -r "$$APK" && echo "✓ Installed successfully" || echo "❌ Install failed"

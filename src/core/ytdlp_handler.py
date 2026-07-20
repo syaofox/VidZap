@@ -169,6 +169,81 @@ def _extract_sync(url: str, opts: dict) -> dict:
     }
 
 
+def get_suggested_formats(formats: list[dict]) -> list[dict]:
+    """从完整格式列表中生成推荐的简洁格式列表（同 Web UI 的推荐卡片逻辑）。"""
+    has_ffmpeg = check_ffmpeg()
+    video_only = [f for f in formats if f["vcodec"] != "none" and f["acodec"] == "none"]
+    audio_only = [f for f in formats if f["vcodec"] == "none" and f["acodec"] != "none"]
+    combined = [f for f in formats if f["vcodec"] != "none" and f["acodec"] != "none"]
+
+    def _height(f):
+        r = f.get("resolution", "")
+        if r and "x" in r:
+            try:
+                return int(r.split("x")[-1])
+            except ValueError:
+                return 0
+        return 0
+
+    suggested: list[dict] = []
+    if has_ffmpeg and video_only:
+        video_only.sort(key=lambda f: (_height(f), f.get("filesize", 0)), reverse=True)
+        best_audio = (
+            max(audio_only, key=lambda f: f.get("filesize", 0)) if audio_only else None
+        )
+        seen = set()
+        for v in video_only:
+            h = _height(v)
+            if h in seen or h <= 0:
+                continue
+            seen.add(h)
+            if best_audio:
+                suggested.append({
+                    "label": f"{h}p",
+                    "format_id": f"{v['format_id']}+{best_audio['format_id']}",
+                    "ext": "mp4",
+                    "filesize": v.get("filesize", 0) + best_audio.get("filesize", 0),
+                    "vcodec": v["vcodec"],
+                    "acodec": best_audio["acodec"],
+                })
+        if audio_only:
+            best_a = max(audio_only, key=lambda f: f.get("filesize", 0))
+            suggested.append({
+                "label": "仅音频",
+                "format_id": best_a["format_id"],
+                "ext": best_a["ext"],
+                "filesize": best_a.get("filesize", 0),
+                "vcodec": "none",
+                "acodec": best_a["acodec"],
+            })
+    else:
+        combined.sort(key=lambda f: (_height(f), f.get("filesize", 0)), reverse=True)
+        seen = set()
+        for f in combined:
+            h = _height(f)
+            if h in seen:
+                continue
+            seen.add(h)
+            suggested.append({
+                "label": f"{h}p" if h > 0 else f["resolution"],
+                "format_id": f["format_id"],
+                "ext": f["ext"],
+                "filesize": f.get("filesize", 0),
+                "vcodec": f["vcodec"],
+                "acodec": f["acodec"],
+            })
+        for a in audio_only:
+            suggested.append({
+                "label": "仅音频",
+                "format_id": a["format_id"],
+                "ext": a["ext"],
+                "filesize": a.get("filesize", 0),
+                "vcodec": "none",
+                "acodec": a["acodec"],
+            })
+    return suggested
+
+
 async def start_download(
     url: str,
     format_id: str,
