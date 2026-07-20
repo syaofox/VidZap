@@ -106,6 +106,8 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - Cookie 目录通过 `get_cookie_dir()` 获取（`cookie_manager.py`），由 `VIDZAP_COOKIE_DIR` 环境变量控制，未设置时从 `NICEVID_DATA_DIR` 派生默认为 `{NICEVID_DATA_DIR}/cookies`。
 - DB 中 `cookie_file` 存相对路径 `{domain}.txt`，读取时通过 `_resolve_cookie_path()` 拼装绝对路径（`cookie_manager.py`）。
 - `save_cookie()` 返回 `False` 表示内容无效（无法解析为 Netscape 或原始 Cookie 格式），保存失败。UI 调用处必须检查返回值，返回 `False` 时提示用户而不是显示"保存成功"。
+- `get_cookie(domain)` 返回单条 Cookie 记录（含 `content` 字段，即文件内容），用于修改对话框预填。文件不存在时 `content` 为空字符串。
+- Cookie 修改通过 `/settings?edit=DOMAIN` URL 导航 + 页面自动弹窗实现。`settings.render(edit_domain)` 在页面加载后自动打开修改对话框。
 - `_CancelledError` 统一在 `browser_extractor.py` 定义，`douyin_note.py` 从 `browser_extractor` 导入。
 - **`note_info` 预提取优化**：`download_note_images()` 接受可选参数 `note_info: dict | None`，当已分析过时跳过二次 Playwright 提取。`home.py:download_note()` 从 `analysis_result["urls_info"]`（per-URL dict）取出后经 `DownloadTask.note_info` → `_worker()` 透传。**单链接和批量模式均会传 per-URL note_info**（批量模式在 analyze 阶段已并发提取所有 URL）。新增下载入口若没有预提取数据，传 `note_info=None` 即可走自动提取回退。
 - `PlaywrightNoteExtractor.extract()` 自动从 `cookie_file` 解析 Netscape Cookie 并通过 `context.add_cookies()` 注入。

@@ -49,9 +49,9 @@ def index() -> None:
 
 
 @ui.page("/settings")
-def settings_page() -> None:
+def settings_page(edit: str = "", delete: str = "") -> None:
     ui.query('.nicegui-content').style('max-width: 1200px; margin: 0 auto;')
-    settings.render()
+    settings.render(edit_domain=edit, delete_domain=delete)
 
 
 @ui.page("/history")

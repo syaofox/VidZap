@@ -8,6 +8,7 @@ from core.cookie_manager import (
     _raw_to_netscape,
     delete_cookie,
     extract_domain_from_input,
+    get_cookie,
     get_cookie_dir,
     get_cookie_for_url,
     init_cookie_dir,
@@ -407,3 +408,62 @@ class TestSaveCookieNormalization:
         result = save_cookie("example.com", "garbage data without equals")
         assert result is False
         assert not (tmp_path / "cookies" / "example.com.txt").exists()
+
+
+# =============================================================================
+# get_cookie
+# =============================================================================
+
+
+class TestGetCookie:
+    def setup_method(self):
+        init_db()
+        init_cookie_dir()
+
+    def test_returns_existing_cookie(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+        init_db()
+
+        save_cookie("youtube.com", "name1=val1; name2=val2")
+        result = get_cookie("youtube.com")
+
+        assert result is not None
+        assert result["domain"] == "youtube.com"
+        assert "name1" in result["content"]
+        assert "name2" in result["content"]
+        assert "cookie_file" in result
+        assert "created_at" in result
+        assert "updated_at" in result
+
+    def test_returns_none_for_missing(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+        init_db()
+
+        result = get_cookie("nonexistent.com")
+        assert result is None
+
+    def test_handles_missing_file(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+        init_db()
+
+        save_cookie("example.com", "x=1")
+        # Manually delete the file to simulate missing file
+        (tmp_path / "cookies" / "example.com.txt").unlink()
+
+        result = get_cookie("example.com")
+        assert result is not None
+        assert result["domain"] == "example.com"
+        assert result["content"] == ""
+
+    def test_normalizes_domain(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+        init_db()
+
+        save_cookie("youtube.com", "x=1")
+        result = get_cookie("www.YouTube.com")
+        assert result is not None
+        assert result["domain"] == "youtube.com"

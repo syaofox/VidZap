@@ -178,6 +178,25 @@ def save_cookie(domain: str, cookie_content: str) -> bool:
     return True
 
 
+def get_cookie(domain: str) -> dict | None:
+    domain = normalize_domain(domain)
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM cookies WHERE domain = ?", (domain,)
+        ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        cookie_file = _resolve_cookie_path(str(result["cookie_file"]))
+        try:
+            with open(cookie_file) as f:
+                result["content"] = f.read()
+        except FileNotFoundError:
+            result["content"] = ""
+            logger.warning("Cookie 文件不存在: %s", cookie_file)
+        return result
+
+
 def list_cookies() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM cookies ORDER BY domain").fetchall()
