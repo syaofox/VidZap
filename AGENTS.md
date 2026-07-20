@@ -52,6 +52,7 @@ make playwright-setup       # 安装 Playwright Chromium（devcontainer）
 - **`batch_download()` 已从 `ytdlp_handler.py` 删除**（死代码，从未被调用）。批量下载统一走 `download_queue.enqueue()` 逐 URL。
 - **`download()` 和 `download_note()` 签名变更**：第一个参数改为 `urls: list[str]`，由调用方传入待下载 URL 列表（可能是过滤后的子集）。
 - **`_DEFAULT_HTTP_HEADERS` 已移除**（曾被用于应对 Bilibili 412，但自定义 UA 干扰 YouTube 的格式协商和登录态检测，现已完全删除。yt-dlp 使用默认头。）
+- **`pyproject.toml` 变动必须同步 `uv.lock`** — 修改 `pyproject.toml`（含版本号）后执行 `uv lock` 生成新 `uv.lock`。提交时 `pyproject.toml` 和 `uv.lock` 必须成对提交，否则 `uv sync --frozen` 会失败。
 
 ## Docker 约束
 
