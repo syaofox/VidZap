@@ -4,6 +4,11 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONArray
@@ -47,7 +52,37 @@ class MainActivity : AppCompatActivity() {
         return urlPattern.find(text)?.value
     }
 
+    private fun showLoadingDialog(message: String): AlertDialog {
+        val progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleLarge)
+        progressBar.isIndeterminate = true
+
+        val textView = TextView(this)
+        textView.text = message
+        textView.gravity = Gravity.CENTER
+        textView.textSize = 16f
+        textView.setPadding(0, 24, 0, 0)
+
+        val layout = LinearLayout(this)
+        layout.orientation = LinearLayout.VERTICAL
+        layout.setPadding(48, 32, 48, 32)
+        layout.gravity = Gravity.CENTER
+        layout.addView(
+            progressBar,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { gravity = Gravity.CENTER },
+        )
+        layout.addView(textView)
+
+        return AlertDialog.Builder(this)
+            .setView(layout)
+            .setCancelable(false)
+            .show()
+    }
+
     private fun analyzeUrl(serverUrl: String, url: String) {
+        val loadingDialog = showLoadingDialog("正在分析链接…")
         Thread {
             try {
                 val apiUrl = URL("$serverUrl/api/share")
@@ -66,6 +101,7 @@ class MainActivity : AppCompatActivity() {
                     val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: ""
                     val msg = "请求失败 ($responseCode): ${errorBody.take(200)}"
                     runOnUiThread {
+                        loadingDialog.dismiss()
                         Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
                         finish()
                     }
@@ -83,9 +119,13 @@ class MainActivity : AppCompatActivity() {
                     val title = result.optString("title", url)
                     val formats = result.optJSONArray("formats")
                     if (formats != null && formats.length() > 0) {
-                        showFormatPicker(serverUrl, url, title, formats)
+                        runOnUiThread {
+                            loadingDialog.dismiss()
+                            showFormatPicker(serverUrl, url, title, formats)
+                        }
                     } else {
                         runOnUiThread {
+                            loadingDialog.dismiss()
                             Toast.makeText(this, "未找到可用格式", Toast.LENGTH_LONG).show()
                             finish()
                         }
@@ -95,18 +135,21 @@ class MainActivity : AppCompatActivity() {
                     val title = result.optString("title", url)
                     val label = if (type == "douyin_note") "笔记" else "视频"
                     runOnUiThread {
+                        loadingDialog.dismiss()
                         Toast.makeText(this, "已添加 $label「${title.take(30)}」到下载队列", Toast.LENGTH_LONG).show()
                         finish()
                     }
                 } else {
                     val msg = result.optString("message", "未知响应")
                     runOnUiThread {
+                        loadingDialog.dismiss()
                         Toast.makeText(this, "处理失败: $msg", Toast.LENGTH_LONG).show()
                         finish()
                     }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    loadingDialog.dismiss()
                     Toast.makeText(this, "连接失败: ${e.message}", Toast.LENGTH_LONG).show()
                     finish()
                 }
@@ -132,24 +175,23 @@ class MainActivity : AppCompatActivity() {
             "$label ($codecInfo)$sizeText"
         }
 
-        runOnUiThread {
-            AlertDialog.Builder(this)
-                .setTitle("选择画质 - ${title.take(30)}")
-                .setSingleChoiceItems(labels, -1) { dialog, which ->
-                    val formatId = formats.getJSONObject(which).optString("format_id", "")
-                    dialog.dismiss()
-                    downloadWithFormat(serverUrl, url, formatId)
-                }
-                .setNegativeButton("取消") { dialog, _ ->
-                    dialog.dismiss()
-                    finish()
-                }
-                .setOnCancelListener { finish() }
-                .show()
-        }
+        AlertDialog.Builder(this)
+            .setTitle("选择画质 - ${title.take(30)}")
+            .setSingleChoiceItems(labels, -1) { dialog, which ->
+                val formatId = formats.getJSONObject(which).optString("format_id", "")
+                dialog.dismiss()
+                downloadWithFormat(serverUrl, url, formatId)
+            }
+            .setNegativeButton("取消") { dialog, _ ->
+                dialog.dismiss()
+                finish()
+            }
+            .setOnCancelListener { finish() }
+            .show()
     }
 
     private fun downloadWithFormat(serverUrl: String, url: String, formatId: String) {
+        val loadingDialog = showLoadingDialog("正在提交下载…")
         Thread {
             try {
                 val apiUrl = URL("$serverUrl/api/share")
@@ -171,11 +213,13 @@ class MainActivity : AppCompatActivity() {
                     "请求失败 ($responseCode): ${errorBody.take(200)}"
                 }
                 runOnUiThread {
+                    loadingDialog.dismiss()
                     Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
                 }
                 conn.disconnect()
             } catch (e: Exception) {
                 runOnUiThread {
+                    loadingDialog.dismiss()
                     Toast.makeText(this, "连接失败: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             } finally {
