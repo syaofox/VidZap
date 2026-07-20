@@ -403,6 +403,33 @@ class TestGetDownloadHistory:
         assert rid2 in ids
         assert rid1 in ids
 
+    def test_priority_sort(self):
+        from core.db import init_db
+
+        init_db()
+        rid_dl = create_download_record("http://dl.com", "dl", "", "best")
+        rid_fail = create_download_record("http://fail.com", "fail", "", "best")
+        rid_done = create_download_record("http://done.com", "done", "", "best")
+        update_download_status(rid_dl, "downloading")
+        update_download_status(rid_fail, "failed")
+        update_download_status(rid_done, "completed")
+
+        history = get_download_history()
+        ids = [r["id"] for r in history]
+        # 所有记录都在结果中
+        assert rid_dl in ids
+        assert rid_fail in ids
+        assert rid_done in ids
+        # downloading 和 failed 排在 completed 前面
+        dl_idx = ids.index(rid_dl)
+        fail_idx = ids.index(rid_fail)
+        done_idx = ids.index(rid_done)
+        assert dl_idx < done_idx, "downloading 应排在 completed 前面"
+        assert fail_idx < done_idx, "failed 应排在 completed 前面"
+
+        # 同优先级内按 created_at DESC，rid_fail 先创建，所以排在后面
+        assert fail_idx > dl_idx, "同优先级内最新的在前"
+
 
 class TestFindExistingDownload:
     def test_finds_by_url(self):

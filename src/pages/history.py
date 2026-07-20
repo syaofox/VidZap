@@ -35,7 +35,7 @@ def render() -> None:
         ui.label("下载历史").classes("text-h4 text-white")
         ui.button("返回首页", on_click=lambda: ui.navigate.to("/")).props("flat color=white")
 
-    layout = {"mode": app.storage.user.get("history_layout", "list")}
+    layout = {"mode": app.storage.user.get("history_layout", "grid")}
     container = ui.column().classes("w-full max-w-5xl mx-auto mt-8 px-6")
     dynamic_refs: dict[int, dict] = {}
 

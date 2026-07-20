@@ -550,10 +550,14 @@ def get_download_by_id(download_id: int) -> dict | None:
 
 
 def get_download_history() -> list[dict]:
-    """获取下载历史"""
+    """获取下载历史（活动中/失败任务排前，完成后按时间排序）"""
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM downloads ORDER BY created_at DESC LIMIT 100",
+            "SELECT * FROM downloads "
+            "ORDER BY "
+            "  CASE WHEN status IN ('pending','downloading','failed') THEN 0 ELSE 1 END, "
+            "  created_at DESC "
+            "LIMIT 100",
         ).fetchall()
         return [dict(row) for row in rows]
 
