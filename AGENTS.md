@@ -79,7 +79,7 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 
 ### 已知技术债务
 - `db.py` 中 `DB_PATH` 模块级变量在 import 时绑定，`_db_path()` 函数动态计算，测试中修改 `NICEVID_DATA_DIR` 后 `DB_PATH` 不更新
-- `src/pages/components/` 包存在但为空（dead code）
+- `src/components/` 包存在但为空（dead code）
 
 ## 非源码可见约束
 

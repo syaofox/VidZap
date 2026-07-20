@@ -1,5 +1,5 @@
 """Tests for core.db."""
-from core.db import DB_PATH, get_connection, init_db
+from core.db import _db_path, get_connection, init_db
 
 
 def get_download_count() -> int:
@@ -60,4 +60,4 @@ class TestGetConnection:
         assert after == before + 1
 
     def test_db_path_is_sqlite_file(self):
-        assert str(DB_PATH).endswith("database.sqlite")
+        assert str(_db_path()).endswith("database.sqlite")

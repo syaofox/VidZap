@@ -4,9 +4,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-_DATA_DIR = Path(os.environ.get("NICEVID_DATA_DIR", "."))
-DB_PATH = _DATA_DIR / "database.sqlite"
-
 
 def _db_path() -> Path:
     return Path(os.environ.get("NICEVID_DATA_DIR", ".")) / "database.sqlite"
