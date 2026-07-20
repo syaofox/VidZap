@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def _db_path() -> Path:
-    return Path(os.environ.get("NICEVID_DATA_DIR", ".")) / "database.sqlite"
+    return Path(os.environ.get("NICEVID_DATA_DIR", "data")) / "database.sqlite"
 
 
 def init_db() -> None:

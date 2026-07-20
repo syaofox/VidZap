@@ -70,7 +70,7 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 
 | 变量 | 默认值 | 用途 |
 |------|--------|------|
-| `NICEVID_DATA_DIR` | `.` | SQLite + NiceGUI 存储路径 |
+| `NICEVID_DATA_DIR` | `data` | SQLite + NiceGUI 存储路径 |
 | `NICEVID_STORAGE_SECRET` | 硬编码默认值 | session 加密密钥 |
 | `NICEVID_RELOAD` | `false` | 热重载（仅开发） |
 | `NICEVID_PORT` / `NICEVID_HOST` | `8080` / `0.0.0.0` | 监听地址 |

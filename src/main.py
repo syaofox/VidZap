@@ -17,9 +17,7 @@ from pages import history, home, settings
 Path("downloads").mkdir(exist_ok=True)
 Path("cookies").mkdir(exist_ok=True)
 
-_data_dir = os.environ.get("NICEVID_DATA_DIR")
-if _data_dir:
-    Path(_data_dir).mkdir(parents=True, exist_ok=True)
+Path(os.environ.get("NICEVID_DATA_DIR", "data")).mkdir(parents=True, exist_ok=True)
 
 # 初始化数据库
 init_db()
