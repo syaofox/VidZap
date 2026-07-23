@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+base {
+    archivesName = "VidZapShare"
+}
+
 android {
     namespace = "com.vidzap.share"
     compileSdk = 36
