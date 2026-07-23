@@ -51,7 +51,7 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - Mocking: `monkeypatch.setattr` + `unittest.mock.patch`，避免 mock 整个模块
 - `@pytest.mark.parametrize` 用于数据驱动测试
 - DB 隔离: `_temp_db_dir`（autouse fixture）猴子补丁 `NICEVID_DATA_DIR`
-- `setup_method()` 内调用 `init_db()` + `init_cookie_dir()`
+- cookie 相关测试的 `setup_method()` 内调用 `init_db()` + `init_cookie_dir()`；其他测试只需 `init_db()`
 
 ### 异步并发
 - UI 上下文: 用 `background_tasks.create(coro())`，禁止用 `asyncio.create_task()`
@@ -106,6 +106,7 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - Cookie 目录通过 `get_cookie_dir()` 获取（`cookie_manager.py`），由 `VIDZAP_COOKIE_DIR` 环境变量控制，未设置时从 `NICEVID_DATA_DIR` 派生默认为 `{NICEVID_DATA_DIR}/cookies`。
 - DB 中 `cookie_file` 存相对路径 `{domain}.txt`，读取时通过 `_resolve_cookie_path()` 拼装绝对路径（`cookie_manager.py`）。
 - `save_cookie()` 返回 `False` 表示内容无效（无法解析为 Netscape 或原始 Cookie 格式），保存失败。UI 调用处必须检查返回值，返回 `False` 时提示用户而不是显示"保存成功"。
+- 通用原则：返回 `bool`（成功/失败）的自定义函数，调用方必须检查返回值，不可忽略。
 - `get_cookie(domain)` 返回单条 Cookie 记录（含 `content` 字段，即文件内容），用于修改对话框预填。文件不存在时 `content` 为空字符串。
 - Cookie 修改通过 `/settings?edit=DOMAIN` URL 导航 + 页面自动弹窗实现。`settings.render(edit_domain)` 在页面加载后自动打开修改对话框。
 - `_CancelledError` 统一在 `browser_extractor.py` 定义，`douyin_note.py` 从 `browser_extractor` 导入。
@@ -115,12 +116,10 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - **`classify_urls(urls)` 和 `split_existing_urls(urls)`** 是 `home.py` 的模块级函数，分别用于 URL 类型分类（video/douyin_note/mixed）和重复检测（返回新 URL 列表和已有记录列表）。可直接导入测试。
 - **批量下载 URL 类型一致性**：analyze 阶段调用 `classify_urls()` 检查所有 URL 类型，混合类型直接报错返回，不会部分处理。
 - **重复检测逐 URL**：`do_download()` / `do_note_download()` 使用 `split_existing_urls()` 区分新 URL 和已存在的 URL。弹窗提供"跳过/覆盖/取消"三个选项，不再全有全无。
-- **`batch_download()` 已从 `ytdlp_handler.py` 删除**（死代码，从未被调用）。批量下载统一走 `download_queue.enqueue()` 逐 URL。
 - **`download()` 和 `download_note()` 签名变更**：第一个参数改为 `urls: list[str]`，由调用方传入待下载 URL 列表（可能是过滤后的子集）。
-- **`_DEFAULT_HTTP_HEADERS` 已移除**（曾被用于应对 Bilibili 412，但自定义 UA 干扰 YouTube 的格式协商和登录态检测，现已完全删除。yt-dlp 使用默认头。）
 - **`pyproject.toml` 变动必须同步 `uv.lock`** — 修改 `pyproject.toml`（含版本号）后执行 `uv lock` 生成新 `uv.lock`。提交时 `pyproject.toml` 和 `uv.lock` 必须成对提交，否则 `uv sync --frozen` 会失败。
 - **yt-dlp 最低版本 `>=2026.7.0`** — 2026.03.17 的 Bilibili extractor 存在 `HTTP 412 Precondition Failed` bug，无法提取 Bilibili 视频信息和封面。`FFmpegThumbnailsConvertor` 勿设 `when: "before_dl"`，使用默认 `after_dl`。
-- **Bilibili CDN 封面 Referer 拦截** — Bilibili 的 `i1.hdslb.com` CDN 检查 `Referer` 头，非 Bilibili 域名（如 `localhost:8080`）返回 403。在 `home.py:render()` 已添加 `<meta name="referrer" content="no-referrer">` 阻止浏览器发送 Referer，确保封面正常显示。若新增页面含有 Bilibili 图片也要加上此 meta。`_DEFAULT_HTTP_HEADERS` 方案因干扰 YouTube 已废弃。
+- **Bilibili CDN 封面 Referer 拦截** — Bilibili 的 `i1.hdslb.com` CDN 检查 `Referer` 头，非 Bilibili 域名（如 `localhost:8080`）返回 403。在 `home.py:render()` 已添加 `<meta name="referrer" content="no-referrer">` 阻止浏览器发送 Referer，确保封面正常显示。若新增页面含有 Bilibili 图片也要加上此 meta。
 
 ## Docker 约束
 
@@ -132,12 +131,12 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - 数据持久化卷：`downloads/`（下载文件）、`data/`（SQLite DB + NiceGUI storage + Cookie 文件）。
 - Docker 构建分两阶段：builder 安装依赖 → final 复制 `.venv` + 源码 + Playwright。
 - **构建优化（层序 + cache mount）**：
-  - Dockerfile 使用 3 个 `--mount=type=cache`：uv 包下载（`/root/.cache/uv`）、apt 包（`/var/cache/apt` + `/var/lib/apt/lists`）、Playwright Chromium 二进制（`/app/.cache/ms-playwright`）。修改依赖时不必从零下载。
+  - Dockerfile 使用 2 个 `--mount=type=cache`：uv 包下载（`/root/.cache/uv`）、apt 包（`/var/cache/apt` + `/var/lib/apt/lists`）。Playwright Chromium 二进制路径由 `PLAYWRIGHT_BROWSERS_PATH` 环境变量指定。修改依赖时不必从零下载。
   - 层序按变更频率排列：用户创建 → `pyproject.toml`/`entrypoint.sh` → playwright install → `COPY src/`（最后）。代码变更只 invalidate 源码层，不触发依赖重装。
   - 修改 `Dockerfile` 或 `.dockerignore` 后执行 `docker compose build --no-cache` 全量验证一次。
 - 资源限制：`docker-compose.yml` 已配置 `mem_limit: 2g` + `cpus: "4"`。Playwright/Chromium 内存峰值可达 800MB，加上 ffmpeg 转码很容易超过 1G，2G 保证功能可用不频繁 OOM。NAS 环境不要移除或大幅调高此限制。
 
-### Android 分享 API (`main.py`)
+## Android 分享 API (`main.py`)
 
 - **路由**：`POST /api/share`（FastAPI 路由，通过 `@app.post` 注册在 `main.py`）
 - **两阶段流程**：
@@ -150,7 +149,7 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - **安全**：无内置认证（LAN 部署），敏感环境应通过反向代理（如 nginx basic auth）保护
 - **测试**：`tests/test_share_api.py` 使用 `unittest.mock.patch` mock `classify_urls`、`extract_info`、`extract_note_images`、`download_queue.enqueue`、`get_suggested_formats`
 
-### Android 原生 App
+## Android 原生 App
 
 - **项目目录**：`android/`（Gradle + Kotlin 项目）
 - **包名**：`com.vidzap.share`

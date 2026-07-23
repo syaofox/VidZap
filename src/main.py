@@ -209,12 +209,14 @@ if __name__ in {"__main__", "__mp_main__"}:
     _storage_secret = os.environ.get(
         "NICEVID_STORAGE_SECRET", "nicevid-secret-key-change-in-production"
     )
+    _host = os.environ.get("NICEVID_HOST", "0.0.0.0")
+    _port = int(os.environ.get("NICEVID_PORT", "8080"))
 
     _icon_path = Path(__file__).parent / 'static' / 'favicon.png'
 
     ui.run(
-        host="0.0.0.0",
-        port=8080,
+        host=_host,
+        port=_port,
         title="VidZap",
         reload=_reload,
         favicon=str(_icon_path),
