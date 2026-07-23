@@ -153,10 +153,13 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 
 - **项目目录**：`android/`（Gradle + Kotlin 项目）
 - **包名**：`com.vidzap.share`
-- **功能**：通过 `ACTION_SEND` intent filter 接收系统分享链接 → 提取 URL → `POST /api/share` 分析 → AlertDialog 列表选择画质 → `POST /api/share` 带 format_id → Toast 提示结果
+- **架构**：双 Activity 设计
+  - `MainActivity`：桌面启动入口，立即跳转 `SettingsActivity`
+  - `ShareHandlerActivity`：接收 `ACTION_SEND`，使用 `Theme.VidZapShare.Dialog`（dialog 主题），**浮窗显示于当前 App 之上，不打断用户正在使用的 App**
+- **功能**：系统分享 → `ShareHandlerActivity` 浮窗弹出 → `POST /api/share` 分析 → 浮窗内 AlertDialog 列表选择画质 → `POST /api/share` 带 format_id → Toast 提示结果 → 自动消失（回到原先 App）
 - **启动**：首次使用需在 App 内配置 VidZap 服务器地址（`SharedPreferences` 持久化）
 - **构建**：用 Android Studio 打开 `android/` 目录即可同步并构建 APK
-- **无后台服务**：App 仅在用户主动分享时瞬间唤醒，执行请求后立即 finish
+- **行为**：`ShareHandlerActivity` 的 `noHistory=true` + `excludeFromRecents=true`，用户完成或取消后立即 finish，不留痕迹
 
 ## 数据流
 
