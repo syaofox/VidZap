@@ -49,8 +49,9 @@ class ShareHandlerActivity : AppCompatActivity() {
     }
 
     private fun extractUrl(text: String): String? {
-        val urlPattern = Regex("https?://[\\w./?=&%-]+")
-        return urlPattern.find(text)?.value
+        val urlPattern = Regex("https?://[\\w./?=&%~#@!$'()*+,;:_-]+")
+        val raw = urlPattern.find(text)?.value ?: return null
+        return raw.trimEnd('.', ',', ')', ']', '}', '）', '】', '」', '》', '\'', '"', '`', '!', '？')
     }
 
     private fun showLoadingDialog(message: String): AlertDialog {
