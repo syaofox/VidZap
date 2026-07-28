@@ -394,6 +394,9 @@ def render() -> None:
         if on_done:
             on_done()
 
+        format_card.classes("hidden")
+        info_card.classes("hidden")
+
         count = len(urls)
         ui.notify(
             f"已添加 {count} 个图文下载任务，请前往下载历史页面查看进度",
@@ -880,6 +883,9 @@ def render() -> None:
 
         if on_done:
             on_done()
+
+        format_card.classes("hidden")
+        info_card.classes("hidden")
 
         count = len(urls)
         ui.notify(
