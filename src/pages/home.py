@@ -395,7 +395,6 @@ def render() -> None:
             on_done()
 
         format_card.classes("hidden")
-        info_card.classes("hidden")
 
         count = len(urls)
         ui.notify(
@@ -885,7 +884,6 @@ def render() -> None:
             on_done()
 
         format_card.classes("hidden")
-        info_card.classes("hidden")
 
         count = len(urls)
         ui.notify(
