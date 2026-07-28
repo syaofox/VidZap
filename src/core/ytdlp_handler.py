@@ -178,7 +178,11 @@ def get_suggested_formats(formats: list[dict]) -> list[dict]:
     has_ffmpeg = check_ffmpeg()
     video_only = [f for f in formats if f["vcodec"] != "none" and f["acodec"] == "none"]
     audio_only = [f for f in formats if f["vcodec"] == "none" and f["acodec"] != "none"]
-    combined = [f for f in formats if f["vcodec"] != "none" and f["acodec"] != "none"]
+    combined = [
+        f for f in formats
+        if (f["vcodec"] != "none" and f["acodec"] != "none")
+        or (f["vcodec"] == "none" and f["acodec"] == "none")
+    ]
 
     def _height(f):
         r = f.get("resolution", "")

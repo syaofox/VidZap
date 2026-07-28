@@ -20,6 +20,7 @@ from core.ytdlp_handler import (
     find_existing_download,
     get_download_by_id,
     get_download_history,
+    get_suggested_formats,
     get_ytdlp_version,
     init_downloads_dir,
     normalize_url,
@@ -593,3 +594,95 @@ class TestOptsDefaults:
         assert "noplaylist" in captured_opts
         assert "format" in captured_opts
         assert "extractor_args" not in captured_opts
+
+
+# =============================================================================
+# get_suggested_formats 测试
+# =============================================================================
+
+
+class TestGetSuggestedFormats:
+    """get_suggested_formats() 在各种格式输入下的行为。"""
+
+    def _make_format(
+        self,
+        format_id: str,
+        resolution: str = "1920x1080",
+        ext: str = "mp4",
+        filesize: int = 100,
+        vcodec: str = "avc1",
+        acodec: str = "mp4a",
+    ) -> dict:
+        return {
+            "format_id": format_id,
+            "resolution": resolution,
+            "ext": ext,
+            "filesize": filesize,
+            "vcodec": vcodec,
+            "acodec": acodec,
+        }
+
+    def test_combined_formats_no_ffmpeg(self, monkeypatch):
+        """combined 格式（vcodec+acodec 都有）在无 ffmpeg 时返回推荐列表。"""
+        monkeypatch.setattr("core.ytdlp_handler.check_ffmpeg", lambda: False)
+        formats = [
+            self._make_format("hd", resolution="1920x1080"),
+            self._make_format("sd", resolution="640x360"),
+        ]
+        result = get_suggested_formats(formats)
+        assert len(result) == 2
+        assert result[0]["label"] == "1080p"
+        assert result[1]["label"] == "360p"
+
+    def test_unknown_codec_formats_no_ffmpeg(self, monkeypatch):
+        """未知 codec（vcodec/acodec 均为 none）在无 ffmpeg 时也应返回推荐。"""
+        monkeypatch.setattr("core.ytdlp_handler.check_ffmpeg", lambda: False)
+        formats = [
+            self._make_format("low", resolution="640x360", vcodec="none", acodec="none"),
+            self._make_format("high", resolution="1920x1080", vcodec="none", acodec="none"),
+        ]
+        result = get_suggested_formats(formats)
+        assert len(result) == 2
+        assert result[0]["label"] == "1080p"
+        assert result[1]["label"] == "360p"
+
+    def test_unknown_codec_with_ffmpeg_uses_fallback(self, monkeypatch):
+        """未知 codec + 有 ffmpeg 但无 video_only，应走 else fallback 并返回推荐。"""
+        monkeypatch.setattr("core.ytdlp_handler.check_ffmpeg", lambda: True)
+        formats = [
+            self._make_format("low", resolution="640x360", vcodec="none", acodec="none"),
+            self._make_format("high", resolution="1920x1080", vcodec="none", acodec="none"),
+        ]
+        result = get_suggested_formats(formats)
+        assert len(result) == 2
+        assert result[0]["label"] == "1080p"
+        assert result[1]["label"] == "360p"
+
+    def test_mixed_formats_with_ffmpeg(self, monkeypatch):
+        """混合格式 + 有 ffmpeg + 有 video_only，走 ffmpeg merge 路径。"""
+        monkeypatch.setattr("core.ytdlp_handler.check_ffmpeg", lambda: True)
+        formats = [
+            self._make_format(
+                "vid-1080", resolution="1920x1080",
+                vcodec="avc1", acodec="none", filesize=200,
+            ),
+            self._make_format(
+                "vid-720", resolution="1280x720",
+                vcodec="avc1", acodec="none", filesize=100,
+            ),
+            self._make_format(
+                "aud-best", resolution="0x0", ext="m4a",
+                vcodec="none", acodec="mp4a", filesize=50,
+            ),
+        ]
+        result = get_suggested_formats(formats)
+        # 两条 video_only + 一条音频 → 1080p+audio、720p+audio、仅音频
+        assert len(result) == 3
+        assert "1080p" in [r["label"] for r in result]
+        assert "720p" in [r["label"] for r in result]
+        assert "仅音频" in [r["label"] for r in result]
+
+    def test_empty_formats(self, monkeypatch):
+        """空 formats 列表应返回空列表。"""
+        monkeypatch.setattr("core.ytdlp_handler.check_ffmpeg", lambda: False)
+        assert get_suggested_formats([]) == []
