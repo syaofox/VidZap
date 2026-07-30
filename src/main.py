@@ -101,21 +101,26 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
                 extract_zhihu_answer(url, cookie),
                 timeout=30,
             )
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"知乎页面访问失败，请检查 Cookie 是否有效: {e}") from e
 
         if zhihu_info.get("image_count", 0) > 0:
             title = zhihu_info.get("title") or url
             thumbnail = zhihu_info.get("thumbnail") or ""
-            dl_id = create_download_record(url, title, thumbnail, "images")
-            await download_queue.enqueue(
-                url=url,
-                format_id="images",
-                cookie_file=cookie,
-                download_id=dl_id,
-                task_type="zhihu_image",
-                note_info=zhihu_info,
-            )
+            try:
+                dl_id = create_download_record(url, title, thumbnail, "images")
+                await download_queue.enqueue(
+                    url=url,
+                    format_id="images",
+                    cookie_file=cookie,
+                    download_id=dl_id,
+                    task_type="zhihu_image",
+                    note_info=zhihu_info,
+                )
+            except Exception as e:
+                raise ValueError(f"创建下载任务失败: {e}") from e
             return {"status": "ok", "download_id": dl_id, "title": title, "type": "zhihu_image"}
 
         raise ValueError("未能从知乎回答提取到可下载内容")
@@ -204,7 +209,7 @@ async def share_url(request: Request) -> JSONResponse:
     except Exception as e:
         logger.exception("分享 API 处理失败")
         return JSONResponse(
-            {"status": "error", "message": str(e)},
+            {"status": "error", "message": str(e), "type": type(e).__name__},
             status_code=500,
         )
 
