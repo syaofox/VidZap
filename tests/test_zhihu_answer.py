@@ -120,6 +120,14 @@ class TestExtractTitle:
         html = "<html></html>"
         assert _extract_title(html, _ZHIHU_ANSWER_URL) == "知乎回答 456"
 
+    def test_fallback_to_pin_id(self):
+        html = "<html></html>"
+        assert _extract_title(html, "https://www.zhihu.com/pin/12345") == "知乎想法 12345"
+
+    def test_fallback_unknown(self):
+        html = "<html></html>"
+        assert _extract_title(html, "https://example.com") == "知乎内容"
+
 
 class TestGuessExtension:
     @pytest.mark.parametrize(

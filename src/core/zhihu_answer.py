@@ -262,9 +262,13 @@ def _extract_title(html: str, url: str) -> str:
     if m:
         title = m.group(1).strip()
         return re.sub(r"\s*-\s*知乎\s*$", "", title)
-    m = re.search(r"/answer/(\d+)", url)
-    aid = m.group(1) if m else "Unknown"
-    return f"知乎回答 {aid}"
+    aid_m = re.search(r"/answer/(\d+)", url)
+    if aid_m:
+        return f"知乎回答 {aid_m.group(1)}"
+    pin_m = re.search(r"/pin/(\d+)", url)
+    if pin_m:
+        return f"知乎想法 {pin_m.group(1)}"
+    return "知乎内容"
 
 
 async def extract_zhihu_answer(
