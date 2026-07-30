@@ -135,7 +135,11 @@ class ShareHandlerActivity : AppCompatActivity() {
                 } else if (status == "ok") {
                     val type = result.optString("type", "video")
                     val title = result.optString("title", url)
-                    val label = if (type == "douyin_note") "笔记" else "视频"
+                    val label = when (type) {
+                        "douyin_note" -> "笔记"
+                        "zhihu_image" -> "图片"
+                        else -> "视频"
+                    }
                     runOnUiThread {
                         loadingDialog.dismiss()
                         Toast.makeText(this, "已添加 $label「${title.take(30)}」到下载队列", Toast.LENGTH_LONG).show()
