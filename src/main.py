@@ -96,10 +96,14 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
         from core.download_queue import download_queue
         from core.zhihu_answer import extract_zhihu_answer
 
-        zhihu_info = await asyncio.wait_for(
-            extract_zhihu_answer(url, cookie),
-            timeout=30,
-        )
+        try:
+            zhihu_info = await asyncio.wait_for(
+                extract_zhihu_answer(url, cookie),
+                timeout=30,
+            )
+        except Exception as e:
+            raise ValueError(f"知乎页面访问失败，请检查 Cookie 是否有效: {e}") from e
+
         if zhihu_info.get("image_count", 0) > 0:
             title = zhihu_info.get("title") or url
             thumbnail = zhihu_info.get("thumbnail") or ""
