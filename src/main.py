@@ -92,6 +92,30 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
         )
         return {"status": "ok", "download_id": dl_id, "title": title, "type": "douyin_note"}
 
+    if url_type == "zhihu_answer":
+        from core.download_queue import download_queue
+        from core.zhihu_answer import extract_zhihu_answer
+
+        zhihu_info = await asyncio.wait_for(
+            extract_zhihu_answer(url, cookie),
+            timeout=30,
+        )
+        if zhihu_info.get("image_count", 0) > 0:
+            title = zhihu_info.get("title") or url
+            thumbnail = zhihu_info.get("thumbnail") or ""
+            dl_id = create_download_record(url, title, thumbnail, "images")
+            await download_queue.enqueue(
+                url=url,
+                format_id="images",
+                cookie_file=cookie,
+                download_id=dl_id,
+                task_type="zhihu_image",
+                note_info=zhihu_info,
+            )
+            return {"status": "ok", "download_id": dl_id, "title": title, "type": "zhihu_image"}
+
+        raise ValueError("未能从知乎回答提取到可下载内容")
+
     # ---- 视频 ----
     if format_id:
         # 阶段二：用指定格式入队下载

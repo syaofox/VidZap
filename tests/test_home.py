@@ -26,6 +26,21 @@ class TestClassifyUrls:
                 ],
                 "douyin_note",
             ),
+            (["https://www.zhihu.com/question/1/answer/2"], "zhihu_answer"),
+            (
+                [
+                    "https://www.zhihu.com/question/1/answer/2",
+                    "https://www.zhihu.com/question/3/answer/4",
+                ],
+                "zhihu_answer",
+            ),
+            (
+                [
+                    "https://www.youtube.com/watch?v=abc",
+                    "https://www.zhihu.com/question/1/answer/2",
+                ],
+                "mixed",
+            ),
             (
                 [
                     "https://www.youtube.com/watch?v=abc",

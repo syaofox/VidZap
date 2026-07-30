@@ -194,7 +194,11 @@ def _render_list_card(rec: dict, dynamic_refs: dict) -> None:
                     status_label = ui.label(f"{icon} {label_text}").classes(
                         f"{color_class} text-body2"
                     )
-                    if rec.get("format_id") == "images":
+                    if rec.get("format_id") == "images" and rec["url"].startswith(
+                        ("https://www.zhihu.com", "http://www.zhihu.com")
+                    ):
+                        ui.label("类型: 知乎图片").classes("text-caption text-grey")
+                    elif rec.get("format_id") == "images":
                         ui.label("类型: 图片").classes("text-caption text-grey")
                     elif rec.get("format_id"):
                         ui.label(f"格式: {rec['format_id']}").classes("text-caption text-grey")
@@ -297,6 +301,9 @@ def _render_actions(rec: dict) -> None:
     status = rec["status"]
     file_path = rec.get("file_path") or ""
     is_note = rec.get("format_id") == "images"
+    is_zhihu = rec.get("format_id") == "images" and rec["url"].startswith(
+        ("https://www.zhihu.com", "http://www.zhihu.com")
+    )
     file_exists = file_path and (os.path.isfile(file_path) or os.path.isdir(file_path))
 
     if status in ("pending", "downloading"):
@@ -314,7 +321,7 @@ def _render_actions(rec: dict) -> None:
         ).props("size=sm flat color=primary")
 
     if status == "completed" and file_exists:
-        if is_note:
+        if is_note or is_zhihu:
             ui.button(
                 "查看图片",
                 icon="photo_library",
@@ -355,13 +362,24 @@ async def _retry_download(rec: dict) -> None:
         return cb
 
     is_note = rec.get("format_id") == "images"
+    is_zhihu = is_note and rec["url"].startswith(
+        ("https://www.zhihu.com", "http://www.zhihu.com")
+    )
+    task_type: str
+    if is_zhihu:
+        task_type = "zhihu_image"
+    elif is_note:
+        task_type = "douyin_note"
+    else:
+        task_type = "video"
+
     await download_queue.enqueue(
         url=rec["url"],
         format_id=rec["format_id"] or "best",
         cookie_file=get_cookie_for_url(rec["url"]),
         progress_callback=_make_callback(rec_id),
         download_id=rec_id,
-        task_type="douyin_note" if is_note else "video",
+        task_type=task_type,
     )
 
     ui.notify("已重新开始下载", type="info")

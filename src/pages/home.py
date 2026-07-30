@@ -18,16 +18,31 @@ from core.ytdlp_handler import (
     get_ytdlp_version,
     update_ytdlp,
 )
+from core.zhihu_answer import (
+    extract_zhihu_answer as _extract_zhihu_answer,
+)
+from core.zhihu_answer import (
+    is_zhihu_answer_url,
+)
 
 
 def classify_urls(urls: list[str]) -> str:
-    """Classify URLs as 'video', 'douyin_note', or 'mixed'."""
-    note_count = sum(1 for u in urls if is_douyin_note_url(u))
-    if note_count == 0:
-        return "video"
-    if note_count == len(urls):
+    """Classify URLs as 'video', 'douyin_note', 'zhihu_answer', or 'mixed'."""
+    types: set[str] = set()
+    for u in urls:
+        if is_douyin_note_url(u):
+            types.add("douyin_note")
+        elif is_zhihu_answer_url(u):
+            types.add("zhihu_answer")
+        else:
+            types.add("video")
+    if len(types) > 1:
+        return "mixed"
+    if "douyin_note" in types:
         return "douyin_note"
-    return "mixed"
+    if "zhihu_answer" in types:
+        return "zhihu_answer"
+    return "video"
 
 
 def split_existing_urls(urls: list[str]) -> tuple[list[str], list[dict]]:
@@ -564,6 +579,126 @@ def render() -> None:
 
                 return
 
+            # 知乎回答分析（仅图片）
+            if url_type == "zhihu_answer":
+                cookie = get_cookie_for_url(urls[0])
+
+                zhihu_image_info = await _extract_zhihu_answer(urls[0], cookie)
+                analysis_result["info"] = zhihu_image_info
+                analysis_result["is_note"] = False
+                analysis_result["urls_info"] = {
+                    urls[0]: zhihu_image_info,
+                }
+
+                has_images = zhihu_image_info.get("image_count", 0) > 0
+
+                if not has_images:
+                    ui.notify("未能提取到图片", type="negative")
+                    return
+
+                info_card.clear()
+                with info_card:
+                    with ui.row().classes("w-full gap-4"):
+                        thumb = zhihu_image_info.get("thumbnail", "")
+                        if thumb:
+                            ui.image(thumb).classes("w-48 rounded")
+                        with ui.column().classes("flex-1"):
+                            disp_title = str(
+                                zhihu_image_info.get("title", "知乎回答")
+                            )
+                            ui.label(disp_title).classes("text-h6")
+                            if has_images:
+                                ui.label(
+                                    f"{zhihu_image_info['image_count']} 张图片"
+                                ).classes("text-body1 text-grey")
+
+                # 图片预览和下载
+                format_card.classes(remove="hidden")
+                format_card.clear()
+                with format_card:
+                    ui.label("图片预览").classes("text-h6 mb-2")
+                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                        for img_url in zhihu_image_info["image_urls"]:
+                            img = ui.image(img_url).classes(
+                                "w-32 h-32 object-cover rounded cursor-pointer"
+                            )
+
+                            def _open_img(u=img_url):
+                                ui.navigate.to(u, new_tab=True)
+
+                            img.on("click", _open_img)
+
+                    with ui.row().classes("w-full justify-end mt-4"):
+                        zh_dl_btn_ref: dict = {"btn": None}
+
+                        async def do_zhihu_download() -> None:
+                            urls = analysis_result["urls"]
+                            new_urls, existing = split_existing_urls(urls)
+
+                            urls_to_download = urls
+                            if existing:
+                                existing_titles = [
+                                    r.get("title") or r["url"][:60]
+                                    for r in existing
+                                ]
+                                with ui.dialog() as dialog, ui.card():
+                                    ui.label(
+                                        "部分链接已存在于下载记录中"
+                                    ).classes("text-h6")
+                                    for t in existing_titles:
+                                        ui.label(f"  · {t}").classes(
+                                            "text-body2"
+                                        )
+                                    with ui.row().classes(
+                                        "w-full justify-end mt-4 gap-2"
+                                    ):
+                                        ui.button(
+                                            "取消",
+                                            on_click=lambda: dialog.submit(
+                                                "cancel"
+                                            ),
+                                        ).props("flat")
+                                        ui.button(
+                                            "跳过已存在的",
+                                            on_click=lambda: dialog.submit(
+                                                "skip"
+                                            ),
+                                        ).props("color=primary")
+                                        ui.button(
+                                            "覆盖重新下载",
+                                            on_click=lambda: dialog.submit(
+                                                "overwrite"
+                                            ),
+                                        ).props("color=negative")
+                                choice = await dialog
+                                if choice == "cancel":
+                                    zh_dl_btn_ref["btn"].enable()
+                                    return
+                                elif choice == "skip":
+                                    urls_to_download = new_urls
+                                elif choice == "overwrite":
+                                    for r in existing:
+                                        delete_download_record(r["id"])
+                                    urls_to_download = urls
+
+                            if not urls_to_download:
+                                ui.notify("没有需要下载的新链接", type="info")
+                                zh_dl_btn_ref["btn"].enable()
+                                return
+
+                            zh_dl_btn_ref["btn"].disable()
+                            await download_zhihu(
+                                urls_to_download,
+                                on_done=lambda: zh_dl_btn_ref["btn"].enable(),
+                            )
+
+                        zh_dl_btn_ref["btn"] = ui.button(
+                            f"下载全部图片 ({zhihu_image_info['image_count']} 张)",
+                            on_click=do_zhihu_download,
+                        ).props("color=positive push")
+
+                return
+
             # 常规视频分析
             info = await extract_info(urls[0], cookie)
             analysis_result["info"] = info
@@ -888,6 +1023,69 @@ def render() -> None:
         count = len(urls)
         ui.notify(
             f"已添加 {count} 个下载任务，请前往下载历史页面查看进度",
+            type="positive",
+            multi_line=True,
+        )
+
+    async def download_zhihu(
+        urls: list[str],
+        on_done: Callable | None = None,
+    ) -> None:
+        """下载知乎回答的全部图片"""
+        if not urls:
+            return
+
+        urls_info = analysis_result.get("urls_info") or {}
+        from pages.history import _download_progress
+
+        for url in urls:
+            cookie = get_cookie_for_url(url)
+            note_info_for_url = urls_info.get(url)
+            title = (
+                note_info_for_url.get("title", "Unknown")
+                if note_info_for_url
+                else "Unknown"
+            )
+            thumb = (
+                note_info_for_url.get("thumbnail", "")
+                if note_info_for_url
+                else ""
+            )
+            dl_id = create_download_record(
+                url=url,
+                title=title,
+                thumbnail=thumb,
+                format_id="images",
+            )
+
+            def _make_callback(did: int):
+                def cb(percent: float, speed: str, eta: str) -> None:
+                    _download_progress[did] = {
+                        "percent": percent,
+                        "speed": speed,
+                        "eta": eta,
+                    }
+
+                return cb
+
+            await download_queue.enqueue(
+                url=url,
+                format_id="images",
+                cookie_file=cookie,
+                progress_callback=_make_callback(dl_id),
+                download_id=dl_id,
+                task_type="zhihu_image",
+                note_info=note_info_for_url,
+            )
+
+        if on_done:
+            on_done()
+
+        format_card.classes("hidden")
+
+        count = len(urls)
+        ui.notify(
+            f"已添加 {count} 个图片下载任务，请前往下载历史页面查看进度",
             type="positive",
             multi_line=True,
         )
