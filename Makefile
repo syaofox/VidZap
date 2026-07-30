@@ -112,8 +112,8 @@ android-build:
 		export PATH="$$ANDROID_HOME/build-tools/$$(ls $$ANDROID_HOME/build-tools/ | sort -V | tail -1):$$PATH"; \
 		./gradlew assembleDebug --no-daemon 2>&1; \
 	) | tail -5; \
-	APK=android/app/build/outputs/apk/debug/app-debug.apk; \
-	if [ -f "$$APK" ]; then \
+	APK=$$(find android/app/build/outputs/apk/debug -name "*-debug.apk" 2>/dev/null | head -1); \
+	if [ -n "$$APK" ] && [ -f "$$APK" ]; then \
 		echo "✓ APK built: $$APK"; \
 		ls -lh "$$APK"; \
 	else \
@@ -122,9 +122,9 @@ android-build:
 
 # Install APK to connected device (debug)
 android-install: android-build
-	@APK=android/app/build/outputs/apk/debug/app-debug.apk; \
-	if [ ! -f "$$APK" ]; then \
-		echo "❌ APK not found. Build first."; \
+	@APK=$$(find android/app/build/outputs/apk/debug -name "*-debug.apk" 2>/dev/null | head -1); \
+	if [ -z "$$APK" ] || [ ! -f "$$APK" ]; then \
+		echo "❌ APK not found"; \
 		exit 1; \
 	fi; \
 	echo "Installing APK..."; \
