@@ -43,6 +43,43 @@ class TestIsZhihuAnswerUrl:
         assert is_zhihu_answer_url(url) == expected
 
 
+_ZHIHU_PIN_URL = "https://www.zhihu.com/pin/12345"
+
+
+class TestIsZhihuPinUrl:
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (_ZHIHU_PIN_URL, True),
+            ("https://www.zhihu.com/pin/2065929550513672210", True),
+            ("https://zhihu.com/pin/1", True),
+            ("http://www.zhihu.com/pin/999", True),
+            ("https://www.zhihu.com/question/123/answer/456", False),
+            ("https://zhuanlan.zhihu.com/p/123", False),
+            ("https://www.youtube.com/watch?v=abc", False),
+            ("", False),
+        ],
+    )
+    def test_match(self, url, expected):
+        from core.zhihu_answer import is_zhihu_pin_url
+        assert is_zhihu_pin_url(url) == expected
+
+
+class TestIsZhihuImageUrl:
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://www.zhihu.com/question/1/answer/2", True),
+            ("https://www.zhihu.com/pin/12345", True),
+            ("https://www.youtube.com/watch?v=abc", False),
+            ("https://www.douyin.com/note/123", False),
+        ],
+    )
+    def test_match(self, url, expected):
+        from core.zhihu_answer import is_zhihu_image_url
+        assert is_zhihu_image_url(url) == expected
+
+
 class TestParseCookies:
     def test_no_cookie_file(self):
         assert _parse_cookies(None) == {}

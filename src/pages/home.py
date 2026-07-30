@@ -23,6 +23,7 @@ from core.zhihu_answer import (
 )
 from core.zhihu_answer import (
     is_zhihu_answer_url,
+    is_zhihu_pin_url,
 )
 
 
@@ -32,7 +33,7 @@ def classify_urls(urls: list[str]) -> str:
     for u in urls:
         if is_douyin_note_url(u):
             types.add("douyin_note")
-        elif is_zhihu_answer_url(u):
+        elif is_zhihu_answer_url(u) or is_zhihu_pin_url(u):
             types.add("zhihu_answer")
         else:
             types.add("video")

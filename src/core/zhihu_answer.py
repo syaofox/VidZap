@@ -1,8 +1,11 @@
-"""Zhihu answer image extraction and download.
+"""Zhihu answer / pin image extraction and download.
 
-只做图片提取与下载。知乎回答中的视频无法通过静态 HTML 可靠提取
-（yt-dlp 只支持 zvideo/{id} 格式，而 answer URL 不被支持），
-因此放弃视频支持。
+支持两种 URL 格式：
+  - 回答: question/{qid}/answer/{aid}
+  - 想法: pin/{id}
+
+只做图片提取与下载。视频无法通过静态 HTML 可靠提取
+（yt-dlp 只支持 zvideo/{id} 格式），因此放弃视频支持。
 """
 import asyncio
 import json
@@ -24,6 +27,10 @@ logger = logging.getLogger(__name__)
 
 ZHIHU_ANSWER_PATTERN = re.compile(
     r"https?://(?:www\.)?zhihu\.com/question/\d+/answer/\d+"
+)
+
+ZHIHU_PIN_PATTERN = re.compile(
+    r"https?://(?:www\.)?zhihu\.com/pin/\d+"
 )
 
 _USER_AGENT = (
@@ -51,6 +58,15 @@ _ATTR_PATTERNS = (
 
 def is_zhihu_answer_url(url: str) -> bool:
     return bool(ZHIHU_ANSWER_PATTERN.match(url))
+
+
+def is_zhihu_pin_url(url: str) -> bool:
+    return bool(ZHIHU_PIN_PATTERN.match(url))
+
+
+def is_zhihu_image_url(url: str) -> bool:
+    """Check if URL is a Zhihu answer or pin (both contain extractable images)."""
+    return is_zhihu_answer_url(url) or is_zhihu_pin_url(url)
 
 
 def _parse_cookies(cookie_file: str | None) -> dict[str, str]:

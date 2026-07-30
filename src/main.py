@@ -150,8 +150,8 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
         return {"status": "ok", "download_id": dl_id, "title": title, "type": "video"}
 
     # 阶段一：分析 URL，返回可用格式
-    # 对 zhihu.com/answer/ URL 直接走图片提取，跳过 yt-dlp（yt-dlp 不支持且会输出 ERROR 日志）
-    if "zhihu.com" in url and "/answer/" in url:
+    # 对 zhihu.com 图片类 URL 直接走图片提取，跳过 yt-dlp（yt-dlp 不支持且会输出 ERROR 日志）
+    if "zhihu.com" in url and ("/answer/" in url or "/pin/" in url):
         from core.download_queue import download_queue
         from core.zhihu_answer import extract_zhihu_answer
 
