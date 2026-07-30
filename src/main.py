@@ -150,45 +150,41 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
         return {"status": "ok", "download_id": dl_id, "title": title, "type": "video"}
 
     # 阶段一：分析 URL，返回可用格式
-    try:
-        info = await asyncio.wait_for(_extract_info(url, cookie), timeout=30)
-    except Exception:
-        # 对 zhihu.com 链接降级：若 yt-dlp 无法处理，尝试知乎图片提取
-        if "zhihu.com" in url:
-            from core.download_queue import download_queue
-            from core.zhihu_answer import extract_zhihu_answer
+    # 对 zhihu.com/answer/ URL 直接走图片提取，跳过 yt-dlp（yt-dlp 不支持且会输出 ERROR 日志）
+    if "zhihu.com" in url and "/answer/" in url:
+        from core.download_queue import download_queue
+        from core.zhihu_answer import extract_zhihu_answer
 
+        try:
+            zhihu_info = await asyncio.wait_for(
+                extract_zhihu_answer(url, cookie),
+                timeout=30,
+            )
+        except ValueError:
+            raise
+        except Exception as e2:
+            raise ValueError(f"知乎页面访问失败，请检查 Cookie 是否有效: {e2}") from e2
+
+        if zhihu_info.get("image_count", 0) > 0:
+            title = zhihu_info.get("title") or url
+            thumbnail = zhihu_info.get("thumbnail") or ""
             try:
-                zhihu_info = await asyncio.wait_for(
-                    extract_zhihu_answer(url, cookie),
-                    timeout=30,
+                dl_id = create_download_record(url, title, thumbnail, "images")
+                await download_queue.enqueue(
+                    url=url,
+                    format_id="images",
+                    cookie_file=cookie,
+                    download_id=dl_id,
+                    task_type="zhihu_image",
+                    note_info=zhihu_info,
                 )
-            except ValueError:
-                raise
-            except Exception as e2:
-                raise ValueError(f"知乎页面访问失败，请检查 Cookie 是否有效: {e2}") from e2
+            except Exception as e3:
+                raise ValueError(f"创建下载任务失败: {e3}") from e3
+            return {"status": "ok", "download_id": dl_id, "title": title, "type": "zhihu_image"}
 
-            if zhihu_info.get("image_count", 0) > 0:
-                title = zhihu_info.get("title") or url
-                thumbnail = zhihu_info.get("thumbnail") or ""
-                try:
-                    dl_id = create_download_record(url, title, thumbnail, "images")
-                    await download_queue.enqueue(
-                        url=url,
-                        format_id="images",
-                        cookie_file=cookie,
-                        download_id=dl_id,
-                        task_type="zhihu_image",
-                        note_info=zhihu_info,
-                    )
-                except Exception as e3:
-                    raise ValueError(f"创建下载任务失败: {e3}") from e3
-                return {"status": "ok", "download_id": dl_id, "title": title, "type": "zhihu_image"}
+        raise ValueError("未能从知乎回答提取到可下载内容")
 
-            raise ValueError("未能从知乎回答提取到可下载内容")
-
-        raise
-
+    info = await asyncio.wait_for(_extract_info(url, cookie), timeout=30)
     title = info.get("title") or url
     thumbnail = info.get("thumbnail") or ""
     formats = get_suggested_formats(info.get("formats", []))
