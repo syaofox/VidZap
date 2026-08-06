@@ -1,6 +1,6 @@
 # AGENTS.md — VidZap
 
-Python 3.13 视频下载工具（NiceGUI + yt-dlp），支持多站点、格式选择、批量下载、Cookie管理、Douyin笔记提取、知乎回答图片下载。
+Python 3.13 视频下载工具（NiceGUI + yt-dlp），支持多站点、格式选择、批量下载、Cookie管理、Douyin笔记提取、知乎回答/专栏图片下载。
 
 ## 关键命令
 
@@ -113,14 +113,14 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 - **`note_info` 预提取优化**：`download_note_images()` 接受可选参数 `note_info: dict | None`，当已分析过时跳过二次 Playwright 提取。`home.py:download_note()` 从 `analysis_result["urls_info"]`（per-URL dict）取出后经 `DownloadTask.note_info` → `_worker()` 透传。**单链接和批量模式均会传 per-URL note_info**（批量模式在 analyze 阶段已并发提取所有 URL）。新增下载入口若没有预提取数据，传 `note_info=None` 即可走自动提取回退。
 - `PlaywrightNoteExtractor.extract()` 自动从 `cookie_file` 解析 Netscape Cookie 并通过 `context.add_cookies()` 注入。
 - `download_note_images()` 中 `httpx.AsyncClient` 自动从 `cookie_file` 提取 name=value 对作为默认 Cookie 发送。
-- **`classify_urls(urls)` 和 `split_existing_urls(urls)`** 是 `home.py` 的模块级函数，分别用于 URL 类型分类（video/douyin_note/mixed）和重复检测（返回新 URL 列表和已有记录列表）。可直接导入测试。
+- **`classify_urls(urls)` 和 `split_existing_urls(urls)`** 是 `home.py` 的模块级函数，分别用于 URL 类型分类（video/douyin_note/zhihu_answer/mixed）和重复检测（返回新 URL 列表和已有记录列表）。可直接导入测试。
 - **批量下载 URL 类型一致性**：analyze 阶段调用 `classify_urls()` 检查所有 URL 类型，混合类型直接报错返回，不会部分处理。
 - **重复检测逐 URL**：`do_download()` / `do_note_download()` 使用 `split_existing_urls()` 区分新 URL 和已存在的 URL。弹窗提供"跳过/覆盖/取消"三个选项，不再全有全无。
 - **`download()` 和 `download_note()` 签名变更**：第一个参数改为 `urls: list[str]`，由调用方传入待下载 URL 列表（可能是过滤后的子集）。
-- **Zhihu answer 支持**：`src/core/zhihu_answer.py` 模块处理知乎回答的图片提取和下载。视频提取已放弃（yt-dlp 不支持 answer URL 格式，静态 HTML 无法可靠提取视频）。`classify_urls()` 返回 "video"、"douyin_note"、"zhihu_answer" 或 "mixed"。下载任务类型新增 `zhihu_image`，通过 `download_queue.enqueue(task_type="zhihu_image")` 入队。
-- **知乎图片提取**：只做图片，使用 httpx（无需 Playwright）。提取策略按优先级：1) `data-actual` / `data-original` 属性（含原图地址） 2) `__INITIAL_STATE__` / `__NEXT_DATA_INIT__` JSON 3) `<img src>`（兜底）。`extract_zhihu_answer(url, cookie_file)` 返回 `{title, thumbnail, image_urls, image_count}`。
+- **Zhihu 图片支持**：`src/core/zhihu_answer.py` 模块处理知乎**回答**（`question/{qid}/answer/{aid}`）、**想法**（`pin/{id}`）、**专栏文章**（`zhuanlan.zhihu.com/p/{id}`）三种 URL 的图片提取和下载。视频提取已放弃（yt-dlp 不支持 answer URL 格式，静态 HTML 无法可靠提取视频）。`classify_urls()` 返回 "video"、"douyin_note"、"zhihu_answer" 或 "mixed"；URL 分类用 `is_zhihu_image_url()`（涵盖三种格式）。下载任务类型新增 `zhihu_image`，通过 `download_queue.enqueue(task_type="zhihu_image")` 入队。
+- **知乎图片提取**：只做图片，使用 httpx（无需 Playwright）。提取策略按优先级：1) `data-actual` / `data-original` 属性（含原图地址） 2) `js-initialData` / `__NEXT_DATA_INIT__` JSON 3) `<img src>`（兜底）。`extract_zhihu_answer(url, cookie_file)` 返回 `{title, thumbnail, image_urls, image_count}`。**注意：zhihu.com 与 zhuanlan.zhihu.com 页面受 WAF 保护（zh-zse-ck），无有效 Cookie 时 httpx 返回 403**，必须先在设置中配置 zhihu.com 的 Cookie（`d_c0` 为关键，`_xsrf`/`z_c0`/`__zse_ck` 一并带上最稳）。专栏页面 SSR 无 `<title>`/og:title，标题回退为 `知乎专栏 {id}`（`_extract_title` 支持 `/answer/`、`/pin/`、`/p/` 三种回退）。
 - **知乎图片原图归一化**：`_normalize_image_url()` 自动将缩略图 URL（`/80/v2-xxx.jpg`）转为原图 URL（`/v2-xxx.jpg`），去除缩略图尺寸前缀。提取时优先使用 `data-actual` 属性保证原图质量。
-- **知乎图片下载**：`download_zhihu_images()` 将图片保存到 `downloads/zhihu/answer_{id}_{title}/`，支持 `note_info` 预提取跳过（同 douyin_note 模式）。下载出的异常通过 catch-all 捕获（不中断后续图片），但遇到 `_CancelledError` 或 `DownloadCancelledError` 时会透传。
+- **知乎图片下载**：`download_zhihu_images()` 将图片保存到 `downloads/zhihu/{kind}_{id}_{title}/`（kind 为 `answer`/`pin`/`article`，由 `_zhihu_kind()` + `_extract_zhihu_id()` 判定；pin 原错误落 `answer_unknown_*` 已修复），支持 `note_info` 预提取跳过（同 douyin_note 模式）。下载出的异常通过 catch-all 捕获（不中断后续图片），但遇到 `_CancelledError` 或 `DownloadCancelledError` 时会透传。
 - **`pyproject.toml` 变动必须同步 `uv.lock`** — 修改 `pyproject.toml`（含版本号）后执行 `uv lock` 生成新 `uv.lock`。提交时 `pyproject.toml` 和 `uv.lock` 必须成对提交，否则 `uv sync --frozen` 会失败。
 - **yt-dlp 最低版本 `>=2026.7.0`** — 2026.03.17 的 Bilibili extractor 存在 `HTTP 412 Precondition Failed` bug，无法提取 Bilibili 视频信息和封面。`FFmpegThumbnailsConvertor` 勿设 `when: "before_dl"`，使用默认 `after_dl`。
 - **Bilibili CDN 封面 Referer 拦截** — Bilibili 的 `i1.hdslb.com` CDN 检查 `Referer` 头，非 Bilibili 域名（如 `localhost:8080`）返回 403。在 `home.py:render()` 已添加 `<meta name="referrer" content="no-referrer">` 阻止浏览器发送 Referer，确保封面正常显示。若新增页面含有 Bilibili 图片也要加上此 meta。
@@ -147,7 +147,7 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
   - **阶段一（分析）**：`{"url": "..."}` → `{"status": "analyzed", "type": "video", "title": "...", "thumbnail": "...", "duration": ..., "formats": [{label, format_id, ext, filesize, vcodec, acodec}, ...]}`
   - **阶段二（下载）**：`{"url": "...", "format_id": "..."}` → `{"status": "ok", "download_id": 123, "title": "...", "type": "video"}`
 - **Douyin note**：始终单阶段自动下载，返回 `{"status": "ok", "download_id": 123, "title": "...", "type": "douyin_note"}`
-- **Zhihu answer**（图片）：同 Douyin note 单阶段自动下载，返回 `{"status": "ok", "download_id": 123, "title": "...", "type": "zhihu_image"}`
+- **Zhihu answer/专栏**（图片）：同 Douyin note 单阶段自动下载，返回 `{"status": "ok", "download_id": 123, "title": "...", "type": "zhihu_image"}`
 - **核心函数**：`_do_share(url, format_id=None)` — 无 format_id 时分析返回推荐格式（调 `get_suggested_formats`），有时入队下载
 - **推荐格式**：`get_suggested_formats(formats)` 在 `ytdlp_handler.py`，按 ffmpeg 可用性生成 1080p/720p/仅音频等精简列表
 - **Android 交互**：阶段一返回后弹出 AlertDialog 单选列表 → 用户选择 → 阶段二携带 format_id 提交
@@ -177,7 +177,7 @@ URL 输入 → classify_urls() → extract_info() / extract_zhihu_answer()
   │               ├─ note_info 已存在 → 跳过 Playwright，直接 httpx 下载 (注入 cookie)
   │               └─ note_info 不存在 → NoteExtractor.extract() (Playwright, 注入 cookie)
   │                                       → httpx 下载 (注入 cookie)
-  └─ "zhihu_answer" → extract_zhihu_answer() (httpx)
+  └─ "zhihu_answer" → extract_zhihu_answer() (httpx, 需 zhihu Cookie，回答/想法/专栏)
              → download_queue.enqueue()
                └─ "zhihu_image" → download_zhihu_images()
                                    ├─ note_info 已存在 → 直接 httpx 下载
@@ -188,5 +188,5 @@ Android 分享 API 数据流：
     → return {status:"analyzed", formats: [...]}  (Android AlertDialog 选择)
   POST /api/share {"url", "format_id"} → _do_share(url, format_id)
     → create_download_record → download_queue.enqueue()
-  Zhihu answer (图片)：单阶段自动下载 → download_zhihu_images()
+  Zhihu answer/专栏 (图片)：单阶段自动下载 → download_zhihu_images()
 ```

@@ -1,11 +1,15 @@
-"""Zhihu answer / pin image extraction and download.
+"""Zhihu answer / pin / article image extraction and download.
 
-支持两种 URL 格式：
+支持三种 URL 格式：
   - 回答: question/{qid}/answer/{aid}
   - 想法: pin/{id}
+  - 专栏文章: zhuanlan.zhihu.com/p/{id}
 
 只做图片提取与下载。视频无法通过静态 HTML 可靠提取
 （yt-dlp 只支持 zvideo/{id} 格式），因此放弃视频支持。
+
+注意：知乎页面（含 zhuanlan）受 WAF 保护，无 Cookie 时返回 403，
+需要用户先配置 zhihu.com 的 Cookie。
 """
 import asyncio
 import json
@@ -31,6 +35,10 @@ ZHIHU_ANSWER_PATTERN = re.compile(
 
 ZHIHU_PIN_PATTERN = re.compile(
     r"https?://(?:www\.)?zhihu\.com/pin/\d+"
+)
+
+ZHIHU_ARTICLE_PATTERN = re.compile(
+    r"https?://(?:www\.)?zhuanlan\.zhihu\.com/p/\d+"
 )
 
 _USER_AGENT = (
@@ -64,9 +72,13 @@ def is_zhihu_pin_url(url: str) -> bool:
     return bool(ZHIHU_PIN_PATTERN.match(url))
 
 
+def is_zhihu_article_url(url: str) -> bool:
+    return bool(ZHIHU_ARTICLE_PATTERN.match(url))
+
+
 def is_zhihu_image_url(url: str) -> bool:
-    """Check if URL is a Zhihu answer or pin (both contain extractable images)."""
-    return is_zhihu_answer_url(url) or is_zhihu_pin_url(url)
+    """Check if URL is a Zhihu answer, pin or article (all contain extractable images)."""
+    return is_zhihu_answer_url(url) or is_zhihu_pin_url(url) or is_zhihu_article_url(url)
 
 
 def _parse_cookies(cookie_file: str | None) -> dict[str, str]:
@@ -268,6 +280,9 @@ def _extract_title(html: str, url: str) -> str:
     pin_m = re.search(r"/pin/(\d+)", url)
     if pin_m:
         return f"知乎想法 {pin_m.group(1)}"
+    article_m = re.search(r"/p/(\d+)", url)
+    if article_m:
+        return f"知乎专栏 {article_m.group(1)}"
     return "知乎内容"
 
 
@@ -300,6 +315,24 @@ async def extract_zhihu_answer(
 # =============================================================================
 
 
+_ZHIHU_ID_PATTERN = re.compile(r"/(?:answer|pin|p)/(\d+)")
+
+
+def _extract_zhihu_id(url: str) -> str:
+    """Extract the Zhihu content ID from an answer / pin / article URL."""
+    m = _ZHIHU_ID_PATTERN.search(url)
+    return m.group(1) if m else "unknown"
+
+
+def _zhihu_kind(url: str) -> str:
+    """Return the URL kind prefix used for output directories: answer / pin / article."""
+    if is_zhihu_pin_url(url):
+        return "pin"
+    if is_zhihu_article_url(url):
+        return "article"
+    return "answer"
+
+
 async def download_zhihu_images(
     url: str,
     cookie_file: str | None = None,
@@ -327,9 +360,9 @@ async def download_zhihu_images(
         raise ValueError("未找到可下载的图片")
 
     safe_title = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", title)[:80]
-    answer_id_match = re.search(r"/answer/(\d+)", url)
-    answer_id = answer_id_match.group(1) if answer_id_match else "unknown"
-    output_dir = DOWNLOADS_DIR / "zhihu" / f"answer_{answer_id}_{safe_title}"
+    kind = _zhihu_kind(url)
+    content_id = _extract_zhihu_id(url)
+    output_dir = DOWNLOADS_DIR / "zhihu" / f"{kind}_{content_id}_{safe_title}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     total = len(image_urls)

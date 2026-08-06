@@ -36,6 +36,27 @@ class TestClassifyUrls:
             ),
             (
                 [
+                    "https://zhuanlan.zhihu.com/p/2068622649132054152?"
+                    "share_code=M0kiYWKW280p"
+                ],
+                "zhihu_answer",
+            ),
+            (
+                [
+                    "https://www.zhihu.com/pin/12345",
+                    "https://zhuanlan.zhihu.com/p/123",
+                ],
+                "zhihu_answer",
+            ),
+            (
+                [
+                    "https://www.youtube.com/watch?v=abc",
+                    "https://zhuanlan.zhihu.com/p/123",
+                ],
+                "mixed",
+            ),
+            (
+                [
                     "https://www.youtube.com/watch?v=abc",
                     "https://www.zhihu.com/question/1/answer/2",
                 ],

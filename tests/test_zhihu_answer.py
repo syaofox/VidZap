@@ -65,12 +65,38 @@ class TestIsZhihuPinUrl:
         assert is_zhihu_pin_url(url) == expected
 
 
+class TestIsZhihuArticleUrl:
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (_ZHIHU_ZHUANLAN_URL, True),
+            ("https://zhuanlan.zhihu.com/p/2068622649132054152", True),
+            ("http://zhuanlan.zhihu.com/p/1", True),
+            (
+                "https://zhuanlan.zhihu.com/p/2068622649132054152?"
+                "share_code=M0kiYWKW280p&utm_psn=2068851398465396812",
+                True,
+            ),
+            ("https://www.zhihu.com/question/123/answer/456", False),
+            ("https://www.zhihu.com/pin/12345", False),
+            ("https://www.zhihu.com/p/123", False),
+            ("https://www.youtube.com/watch?v=abc", False),
+            ("https://example.com/zhuanlan/zhihu/p/123", False),
+            ("", False),
+        ],
+    )
+    def test_match(self, url, expected):
+        from core.zhihu_answer import is_zhihu_article_url
+        assert is_zhihu_article_url(url) == expected
+
+
 class TestIsZhihuImageUrl:
     @pytest.mark.parametrize(
         ("url", "expected"),
         [
             ("https://www.zhihu.com/question/1/answer/2", True),
             ("https://www.zhihu.com/pin/12345", True),
+            ("https://zhuanlan.zhihu.com/p/123", True),
             ("https://www.youtube.com/watch?v=abc", False),
             ("https://www.douyin.com/note/123", False),
         ],
@@ -78,6 +104,37 @@ class TestIsZhihuImageUrl:
     def test_match(self, url, expected):
         from core.zhihu_answer import is_zhihu_image_url
         assert is_zhihu_image_url(url) == expected
+
+
+class TestExtractZhihuId:
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://www.zhihu.com/question/123/answer/456", "456"),
+            ("https://www.zhihu.com/pin/12345", "12345"),
+            (
+                "https://zhuanlan.zhihu.com/p/2068622649132054152?"
+                "share_code=M0kiYWKW280p",
+                "2068622649132054152",
+            ),
+            ("https://www.youtube.com/watch?v=abc", "unknown"),
+        ],
+    )
+    def test_extract(self, url, expected):
+        from core.zhihu_answer import _extract_zhihu_id
+        assert _extract_zhihu_id(url) == expected
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://www.zhihu.com/question/123/answer/456", "answer"),
+            ("https://www.zhihu.com/pin/12345", "pin"),
+            ("https://zhuanlan.zhihu.com/p/123", "article"),
+        ],
+    )
+    def test_kind(self, url, expected):
+        from core.zhihu_answer import _zhihu_kind
+        assert _zhihu_kind(url) == expected
 
 
 class TestParseCookies:
@@ -123,6 +180,10 @@ class TestExtractTitle:
     def test_fallback_to_pin_id(self):
         html = "<html></html>"
         assert _extract_title(html, "https://www.zhihu.com/pin/12345") == "知乎想法 12345"
+
+    def test_fallback_to_article_id(self):
+        html = "<html></html>"
+        assert _extract_title(html, _ZHIHU_ZHUANLAN_URL) == "知乎专栏 123"
 
     def test_fallback_unknown(self):
         html = "<html></html>"
@@ -378,6 +439,31 @@ class TestDownloadZhihuImages:
         assert (result_path / "img_002.png").exists()
 
         mock_update.assert_called_once_with(42, "completed", file_path=result)
+
+    @pytest.mark.asyncio
+    async def test_download_zhuanlan_uses_article_dir(self, tmp_path, monkeypatch):
+        """专栏文章应下载到 article_{id}_{title} 目录。"""
+        note_info = {
+            "title": "测试专栏",
+            "thumbnail": "",
+            "image_urls": ["https://picx.zhimg.com/v2-abc.jpg"],
+            "image_count": 1,
+        }
+
+        async def _fake_dl(media_url, filepath, media_type, client, cancel_event=None):
+            filepath.write_bytes(b"fake_image_data")
+
+        monkeypatch.setattr("core.zhihu_answer._download_media", _fake_dl)
+        monkeypatch.setattr("core.zhihu_answer.DOWNLOADS_DIR", tmp_path)
+
+        with patch("core.zhihu_answer.update_download_status"):
+            result = await download_zhihu_images(
+                "https://zhuanlan.zhihu.com/p/2068622649132054152",
+                cookie_file=None,
+                note_info=note_info,
+            )
+
+        assert "article_2068622649132054152_测试专栏" in str(result)
 
     @pytest.mark.asyncio
     async def test_download_no_images_raises(self):

@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Callable
 
+import httpx
 from nicegui import background_tasks, run, ui
 
 from core.cookie_manager import get_cookie_for_url
@@ -22,8 +23,7 @@ from core.zhihu_answer import (
     extract_zhihu_answer as _extract_zhihu_answer,
 )
 from core.zhihu_answer import (
-    is_zhihu_answer_url,
-    is_zhihu_pin_url,
+    is_zhihu_image_url,
 )
 
 
@@ -33,7 +33,7 @@ def classify_urls(urls: list[str]) -> str:
     for u in urls:
         if is_douyin_note_url(u):
             types.add("douyin_note")
-        elif is_zhihu_answer_url(u) or is_zhihu_pin_url(u):
+        elif is_zhihu_image_url(u):
             types.add("zhihu_answer")
         else:
             types.add("video")
@@ -584,7 +584,12 @@ def render() -> None:
             if url_type == "zhihu_answer":
                 cookie = get_cookie_for_url(urls[0])
 
-                zhihu_image_info = await _extract_zhihu_answer(urls[0], cookie)
+                try:
+                    zhihu_image_info = await _extract_zhihu_answer(urls[0], cookie)
+                except httpx.HTTPStatusError:
+                    raise ValueError(
+                        "知乎页面访问失败（403），请先在设置中配置有效的知乎 Cookie"
+                    ) from None
                 analysis_result["info"] = zhihu_image_info
                 analysis_result["is_note"] = False
                 analysis_result["urls_info"] = {

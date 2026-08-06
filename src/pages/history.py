@@ -13,6 +13,7 @@ from core.ytdlp_handler import (
     get_download_history,
     update_download_status,
 )
+from core.zhihu_answer import is_zhihu_image_url
 
 logger = logging.getLogger(__name__)
 
@@ -301,9 +302,7 @@ def _render_actions(rec: dict) -> None:
     status = rec["status"]
     file_path = rec.get("file_path") or ""
     is_note = rec.get("format_id") == "images"
-    is_zhihu = rec.get("format_id") == "images" and rec["url"].startswith(
-        ("https://www.zhihu.com", "http://www.zhihu.com")
-    )
+    is_zhihu = rec.get("format_id") == "images" and is_zhihu_image_url(rec["url"])
     file_exists = file_path and (os.path.isfile(file_path) or os.path.isdir(file_path))
 
     if status in ("pending", "downloading"):
@@ -362,9 +361,7 @@ async def _retry_download(rec: dict) -> None:
         return cb
 
     is_note = rec.get("format_id") == "images"
-    is_zhihu = is_note and rec["url"].startswith(
-        ("https://www.zhihu.com", "http://www.zhihu.com")
-    )
+    is_zhihu = is_note and is_zhihu_image_url(rec["url"])
     task_type: str
     if is_zhihu:
         task_type = "zhihu_image"

@@ -165,6 +165,55 @@ class TestDoShareDouyinNote:
         assert kwargs["cookie_file"] == "/path/cookie.txt"
 
 
+class TestDoShareZhihu:
+    def setup_method(self) -> None:
+        init_db()
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.zhihu.com/question/1/answer/2",
+            "https://zhuanlan.zhihu.com/p/2068622649132054152?share_code=M0kiYWKW280p",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_share_zhihu_auto_download(self, url):
+        """知乎回答/专栏分享应单阶段提取图片并以 zhihu_image 类型入队。"""
+        enqueue_mock = AsyncMock()
+        zhihu_info = {
+            "title": "知乎内容",
+            "thumbnail": "https://picx.zhimg.com/v2-abc.jpg",
+            "image_urls": ["https://picx.zhimg.com/v2-abc.jpg"],
+            "image_count": 1,
+        }
+        with (
+            patch("pages.home.classify_urls", return_value="zhihu_answer"),
+            patch("core.cookie_manager.get_cookie_for_url", return_value="/path/cookie.txt"),
+            patch(
+                "core.zhihu_answer.extract_zhihu_answer",
+                new_callable=AsyncMock,
+                return_value=zhihu_info,
+            ),
+            patch("core.ytdlp_handler.create_download_record", return_value=77),
+            patch("core.download_queue.download_queue.enqueue", enqueue_mock),
+        ):
+            from main import _do_share
+
+            result = await _do_share(url)
+
+        assert result == {
+            "status": "ok",
+            "download_id": 77,
+            "title": "知乎内容",
+            "type": "zhihu_image",
+        }
+        enqueue_mock.assert_awaited_once()
+        kwargs = enqueue_mock.await_args.kwargs
+        assert kwargs["task_type"] == "zhihu_image"
+        assert kwargs["format_id"] == "images"
+        assert kwargs["note_info"] == zhihu_info
+
+
 class TestDoShareErrors:
     @pytest.mark.asyncio
     async def test_share_mixed_urls_raises(self):
