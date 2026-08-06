@@ -73,8 +73,9 @@ src/
     settings.py        # Cookie 管理页面
 android/               # Android 原生 App（Kotlin + Gradle）
   app/src/main/java/com/vidzap/share/
-    MainActivity.kt    # 接收系统分享，两阶段 API 调用 + 画质选择弹窗
-    SettingsActivity.kt # 服务器地址配置
+    MainActivity.kt       # 启动入口，立即跳转设置页
+    ShareHandlerActivity.kt # 接收系统分享（ACTION_SEND），两阶段 API 调用 + 画质选择弹窗
+    SettingsActivity.kt   # 服务器地址配置
 ```
 
 运行时生成的文件（`data/database.sqlite`、`downloads/`、`data/cookies/`）已加入 `.gitignore`。
@@ -96,7 +97,7 @@ make android-install   # 编译后通过 adb 安装到已连接的设备
 
 ## 下载路径
 
-文件保存在 `downloads/<网站>/<视频标题>/` 目录下。
+视频保存在 `downloads/<extractor>/<视频标题>/` 目录下；抖音图文在 `downloads/douyin/note_<id>_<标题>/`，知乎图片在 `downloads/zhihu/<kind>_<id>_<标题>/`。
 
 ## License
 

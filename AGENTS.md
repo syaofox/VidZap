@@ -1,6 +1,9 @@
 # AGENTS.md — VidZap
 
-Python 3.13 视频下载工具（NiceGUI + yt-dlp），支持多站点、格式选择、批量下载、Cookie管理、Douyin笔记提取、知乎回答/专栏图片下载。
+Python 3.13 视频下载工具（NiceGUI 3.9 + yt-dlp），支持多站点视频、批量下载、Cookie 管理、Douyin 笔记提取、知乎回答/想法/专栏图片下载，含 Android 分享 API（`POST /api/share`）与 Android 原生 App。
+
+> **开发经验、踩坑记录与设计决策的详细说明见 [`doc/DEVELOPMENT.md`](doc/DEVELOPMENT.md)**。
+> 本文件只保留无法从源码直接推理的硬约束与跨语言契约。
 
 ## 关键命令
 
@@ -8,65 +11,12 @@ Python 3.13 视频下载工具（NiceGUI + yt-dlp），支持多站点、格式�
 make lint                   # ruff check .
 make format                 # ruff format .
 make type-check             # mypy .
-uv run pytest tests/        # 全量测试
-uv run pytest tests/ -v -k test_name  # 单个测试
-docker compose build        # Docker 构建
-docker compose up -d        # Docker 启动
-uv lock                     # pyproject.toml 变更后同步 uv.lock
+uv run pytest tests/ -v     # 全量测试（-k test_name 单个）
+docker compose build / up -d
+uv lock                     # pyproject.toml 变动后必须执行，pyproject.toml 与 uv.lock 成对提交
 ```
 
-## 代码约定
-
-### 命名
-- 函数/变量: `snake_case`，私有加 `_` 前缀（如 `_download_sync`）
-- 类: `PascalCase`（如 `DownloadCancelledError`，`PlaywrightNoteExtractor`）
-- 模块级常量: `UPPER_SNAKE_CASE`
-- Test 类: `TestPascalCase`，方法: `snake_case`
-
-### 导入
-- 绝对导入优先: `from core.db import get_connection`
-- 循环引用用惰性导入: 在函数体内 `from core.ytdlp_handler import start_download`
-- 类型注解用 `collections.abc`（`Callable`，`Iterator`），不用 `typing.*`
-- Union 用 `X | None` 语法（Python 3.10+）
-
-### 类型注解
-- 所有 `async def` 和公开函数必须有返回类型注解
-- mypy: `warn_return_any = true`，`disallow_untyped_defs = false`
-
-### 错误处理
-- 自定义异常: `DownloadCancelledError`（`ytdlp_handler.py`），`_CancelledError`（`browser_extractor.py`，供 `douyin_note.py` 导入）
-- 取消异常必须透传: `except DownloadCancelledError: raise`
-- 下载降级重试（`_download_sync`）: 原始 → 去字幕 → 去格式 → 去 cookie → 去 cookie+格式 — 逐级回退
-- 日志: `logger.exception()` 记录非预期异常的完整 traceback
-
-### 数据库（SQLite）
-- 访问模式: `with get_connection() as conn:`，返回 `sqlite3.Row`
-- 表: `cookies`（domain UNIQUE），`downloads`（url/title/status/file_path 等）
-- 迁移: `init_db()` 用 `ALTER TABLE ... ADD COLUMN` 包 try/except，幂等
-- 测试: `conftest.py` 的 `_temp_db_dir` fixture 自动隔离每个测试的数据库
-
-### 测试约定
-- 类容器: `class TestFeatureName:`，方法为测试
-- 异步测试加 `@pytest.mark.asyncio`，使用 `pytest-asyncio`
-- Mocking: `monkeypatch.setattr` + `unittest.mock.patch`，避免 mock 整个模块
-- `@pytest.mark.parametrize` 用于数据驱动测试
-- DB 隔离: `_temp_db_dir`（autouse fixture）猴子补丁 `NICEVID_DATA_DIR`
-- cookie 相关测试的 `setup_method()` 内调用 `init_db()` + `init_cookie_dir()`；其他测试只需 `init_db()`
-
-### 异步并发
-- UI 上下文: 用 `background_tasks.create(coro())`，禁止用 `asyncio.create_task()`
-- 基础设施模块: 可用 `asyncio.ensure_future()`（如 `DownloadQueue.enqueue()`）
-- 并发控制: `asyncio.Semaphore(1)` 序列化提取防限流，`asyncio.Event` 做取消信号，`asyncio.Lock` 保护共享状态
-- I/O 卸载: `await run.io_bound(sync_fn, args...)`，不用 `run_in_executor`
-- 超时: `await asyncio.wait_for(run.io_bound(...), timeout=60)`
-
-### 页面模式
-- 每个页面模块导出 `def render() -> None`
-- 函数开头设异常处理: `ui.on_exception(lambda e: ui.notify(f"页面错误: {e}", type="negative"))`
-- 重数据加载: 先用骨架屏交付，`background_tasks.create()` 中异步加载
-- 异步加载中定期检查 `getattr(_client, "_deleted", False)`（双守卫模式）
-
-### 环境变量
+## 环境变量
 
 | 变量 | 默认值 | 用途 |
 |------|--------|------|
@@ -75,118 +25,102 @@ uv lock                     # pyproject.toml 变更后同步 uv.lock
 | `NICEVID_RELOAD` | `false` | 热重载（仅开发） |
 | `NICEVID_PORT` / `NICEVID_HOST` | `8080` / `0.0.0.0` | 监听地址 |
 | `VIDZAP_COOKIE_DIR` | `{NICEVID_DATA_DIR}/cookies` | Cookie 文件存储目录（默认跟随 `NICEVID_DATA_DIR`） |
-| `VIDZAP_BROWSER` | `playwright` | 浏览器引擎（也接受 `cloakbrowser`） |
+| `VIDZAP_BROWSER` | `playwright` | 浏览器引擎（目前仅 playwright 已实现） |
 
-## 非源码可见约束
+## 硬约束
 
-### NiceGUI 通用规则
+### 异步并发（NiceGUI UI 上下文）
 
-- **`background_tasks.create()` 替代裸 `asyncio.create_task/ensure_future`** — NiceGUI 官方明确禁止在 UI 上下文（页面构建、事件处理器、timer 回调）中使用 `asyncio.create_task()` 或 `asyncio.ensure_future()`，因为 GC 可能取消任务且异常静默丢失。UI 代码一律使用 `background_tasks.create(coro())`。独立基础设施模块（下载队列、core services 等）不需要 NiceGUI event loop，可继续使用 `asyncio.ensure_future()`。
-- **background task 中不能访问 `ui.context.client`** — 背景协程没有 slot context，访问 `ui.context.client` 会抛出 `RuntimeError`。必须在 `background_tasks.create()` 之前捕获 client 引用：`client = ui.context.client`，然后在闭包内使用 `getattr(client, "_deleted", False)` 检查页面是否销毁。
-- **`run.io_bound()` / `run.cpu_bound()` 替代 `run_in_executor`** — I/O 密集型卸载用 `await run.io_bound(sync_fn, args...)`，CPU 密集型用 `await run.cpu_bound(sync_fn, args...)`。它们内部使用线程/进程池，且与 NiceGUI 异常处理集成更好。
-- **Timer 内必须检查** `ui.context.client._deleted` 再操作 UI；否则已销毁页面崩溃。
-- **Dialog 用 await 模式替代** `dialog.on_submit` — 用 `with ui.dialog() as dialog, ui.card():` 创建，`result = await dialog` 等待结果，`dialog.submit(value)` 提交。
-- **优先使用 `.set_text()` / `.set_value()` / bindings 原地更新**，而不是重建元素及其子树。重建会丢失焦点、滚动位置和动画状态（NiceGUI 没有 virtual DOM diffing）。
-- **模块级变量是所有用户共享的** — NiceGUI 是单进程，模块级 `list`/`dict` 在所有用户和标签页间共享。需要隔离时使用 `app.storage.user`（按用户持久化）或 `@ui.page` 内的局部变量。
-- **`@ui.page(response_timeout=N)` 控制页面构建超时** — 默认 3 秒，如果页面构建耗时较长（DB 查询、API 调用等），应在页面函数内通过 `background_tasks.create()` 异步加载，骨架 UI 立刻交付。
-- **`app.timer` 用于全局非 UI 定时器** — 不绑定到任何页面上下文，适用于后端周期性任务。`ui.timer` 是 UI 元素，绑定到当前页面，页面销毁后停止。
-- **`ui.query('body')` 进行全局样式** — Python 优先，不要用 `ui.add_head_html('<style>...</style>')` 做页面级样式，改用 `ui.query('body').classes('bg-grey-2')`。注意 `ui.query()` 必须在 `@ui.page` 函数内调用，不能在模块顶层作用域执行。
-- **`ui.on_exception(handler)` 注册页内异常处理** — 在 HTML 已发送给浏览器后发生的异常（按钮点击、timer 回调）会经过此处理器，可用来显示错误通知或对话框。
-- **`result = await element.run_method(...)` / `await element.get_computed_prop(...)`** 可与前端交互获取返回值。
-- **`@ui.refreshable` 用于局部 UI 重建** — 对需要定期刷新的 UI 片段使用，支持 awaitable refresh，支持参数传递。
-- **`app.add_media_files()` 流式服务下载文件** — 对于视频/音频等大文件使用 `add_media_files()` 而非 `add_static_files()`，以支持 Range 请求和流式传输。
+- **禁止裸 `asyncio.create_task()` / `asyncio.ensure_future()`**，必须用 `background_tasks.create(coro())`（NiceGUI 官方禁止，GC 会取消任务且异常静默丢失）。仅独立基础设施模块（如 `DownloadQueue`）可用 `asyncio.ensure_future()`。
+- **禁止 `run_in_executor`**：用 `await run.io_bound(sync_fn, ...)` / `run.cpu_bound(...)`；超时用 `await asyncio.wait_for(..., timeout=...)`（提取类统一 60s）。
+- **background task 内禁止访问 `ui.context.client`**（无 slot context 会抛 RuntimeError）：在 `background_tasks.create()` 之前捕获 `client = ui.context.client`，闭包内用 `getattr(client, "_deleted", False)` 检查（I/O 前后双守卫）。
+- Timer 回调内先查 `ui.context.client._deleted` 再操作 UI。
+- Dialog 用 await 模式（`with ui.dialog() as dialog, ui.card():` + `result = await dialog` + `dialog.submit(value)`），**禁止 `dialog.on_submit`**。
+- 模块级变量在所有用户/标签页间共享（单进程），需要隔离用 `app.storage.user` 或 `@ui.page` 内局部变量（`history._download_progress` 是故意的全局进度缓存）。
 
-### 项目专用规则
+### 下载队列
 
-- **所有下载必须通过 `download_queue.enqueue()`**，禁止直接调用 `start_download` / `download_note_images`。
-- 重试时传 `progress_callback`，保证历史页面进度更新。
-- `file_path` 对 Douyin notes 是**目录**（不是文件），`/downloads-file/{id}/{filename}` 内部按 `is_dir()` 分支处理。
-- 安全：不记录密钥，Cookie 文件 gitignored，配置用环境变量，验证所有用户输入。
-- Page 模块导出 `render()` 函数供路由使用。
-- Cookie 目录通过 `get_cookie_dir()` 获取（`cookie_manager.py`），由 `VIDZAP_COOKIE_DIR` 环境变量控制，未设置时从 `NICEVID_DATA_DIR` 派生默认为 `{NICEVID_DATA_DIR}/cookies`。
-- DB 中 `cookie_file` 存相对路径 `{domain}.txt`，读取时通过 `_resolve_cookie_path()` 拼装绝对路径（`cookie_manager.py`）。
-- `save_cookie()` 返回 `False` 表示内容无效（无法解析为 Netscape 或原始 Cookie 格式），保存失败。UI 调用处必须检查返回值，返回 `False` 时提示用户而不是显示"保存成功"。
-- 通用原则：返回 `bool`（成功/失败）的自定义函数，调用方必须检查返回值，不可忽略。
-- `get_cookie(domain)` 返回单条 Cookie 记录（含 `content` 字段，即文件内容），用于修改对话框预填。文件不存在时 `content` 为空字符串。
-- Cookie 修改通过 `/settings?edit=DOMAIN` URL 导航 + 页面自动弹窗实现。`settings.render(edit_domain)` 在页面加载后自动打开修改对话框。
-- `_CancelledError` 统一在 `browser_extractor.py` 定义，`douyin_note.py` 从 `browser_extractor` 导入。
-- **`note_info` 预提取优化**：`download_note_images()` 接受可选参数 `note_info: dict | None`，当已分析过时跳过二次 Playwright 提取。`home.py:download_note()` 从 `analysis_result["urls_info"]`（per-URL dict）取出后经 `DownloadTask.note_info` → `_worker()` 透传。**单链接和批量模式均会传 per-URL note_info**（批量模式在 analyze 阶段已并发提取所有 URL）。新增下载入口若没有预提取数据，传 `note_info=None` 即可走自动提取回退。
-- `PlaywrightNoteExtractor.extract()` 自动从 `cookie_file` 解析 Netscape Cookie 并通过 `context.add_cookies()` 注入。
-- `download_note_images()` 中 `httpx.AsyncClient` 自动从 `cookie_file` 提取 name=value 对作为默认 Cookie 发送。
-- **`classify_urls(urls)` 和 `split_existing_urls(urls)`** 是 `home.py` 的模块级函数，分别用于 URL 类型分类（video/douyin_note/zhihu_answer/mixed）和重复检测（返回新 URL 列表和已有记录列表）。可直接导入测试。
-- **批量下载 URL 类型一致性**：analyze 阶段调用 `classify_urls()` 检查所有 URL 类型，混合类型直接报错返回，不会部分处理。
-- **重复检测逐 URL**：`do_download()` / `do_note_download()` 使用 `split_existing_urls()` 区分新 URL 和已存在的 URL。弹窗提供"跳过/覆盖/取消"三个选项，不再全有全无。
-- **`download()` 和 `download_note()` 签名变更**：第一个参数改为 `urls: list[str]`，由调用方传入待下载 URL 列表（可能是过滤后的子集）。
-- **Zhihu 图片支持**：`src/core/zhihu_answer.py` 模块处理知乎**回答**（`question/{qid}/answer/{aid}`）、**想法**（`pin/{id}`）、**专栏文章**（`zhuanlan.zhihu.com/p/{id}`）三种 URL 的图片提取和下载。视频提取已放弃（yt-dlp 不支持 answer URL 格式，静态 HTML 无法可靠提取视频）。`classify_urls()` 返回 "video"、"douyin_note"、"zhihu_answer" 或 "mixed"；URL 分类用 `is_zhihu_image_url()`（涵盖三种格式）。下载任务类型新增 `zhihu_image`，通过 `download_queue.enqueue(task_type="zhihu_image")` 入队。
-- **知乎图片提取**：只做图片，使用 httpx（无需 Playwright）。提取策略按优先级：1) `data-actual` / `data-original` 属性（含原图地址） 2) `js-initialData` / `__NEXT_DATA_INIT__` JSON 3) `<img src>`（兜底）。`extract_zhihu_answer(url, cookie_file)` 返回 `{title, thumbnail, image_urls, image_count}`。**注意：zhihu.com 与 zhuanlan.zhihu.com 页面受 WAF 保护（zh-zse-ck），无有效 Cookie 时 httpx 返回 403**，必须先在设置中配置 zhihu.com 的 Cookie（`d_c0` 为关键，`_xsrf`/`z_c0`/`__zse_ck` 一并带上最稳）。专栏页面 SSR 无 `<title>`/og:title，标题回退为 `知乎专栏 {id}`（`_extract_title` 支持 `/answer/`、`/pin/`、`/p/` 三种回退）。
-- **知乎图片原图归一化**：`_normalize_image_url()` 自动将缩略图 URL（`/80/v2-xxx.jpg`）转为原图 URL（`/v2-xxx.jpg`），去除缩略图尺寸前缀。提取时优先使用 `data-actual` 属性保证原图质量。
-- **知乎图片下载**：`download_zhihu_images()` 将图片保存到 `downloads/zhihu/{kind}_{id}_{title}/`（kind 为 `answer`/`pin`/`article`，由 `_zhihu_kind()` + `_extract_zhihu_id()` 判定；pin 原错误落 `answer_unknown_*` 已修复），支持 `note_info` 预提取跳过（同 douyin_note 模式）。下载出的异常通过 catch-all 捕获（不中断后续图片），但遇到 `_CancelledError` 或 `DownloadCancelledError` 时会透传。
-- **`pyproject.toml` 变动必须同步 `uv.lock`** — 修改 `pyproject.toml`（含版本号）后执行 `uv lock` 生成新 `uv.lock`。提交时 `pyproject.toml` 和 `uv.lock` 必须成对提交，否则 `uv sync --frozen` 会失败。
-- **yt-dlp 最低版本 `>=2026.7.0`** — 2026.03.17 的 Bilibili extractor 存在 `HTTP 412 Precondition Failed` bug，无法提取 Bilibili 视频信息和封面。`FFmpegThumbnailsConvertor` 勿设 `when: "before_dl"`，使用默认 `after_dl`。
-- **Bilibili CDN 封面 Referer 拦截** — Bilibili 的 `i1.hdslb.com` CDN 检查 `Referer` 头，非 Bilibili 域名（如 `localhost:8080`）返回 403。在 `home.py:render()` 已添加 `<meta name="referrer" content="no-referrer">` 阻止浏览器发送 Referer，确保封面正常显示。若新增页面含有 Bilibili 图片也要加上此 meta。
+- **所有下载必须经 `download_queue.enqueue()`**，禁止直接调用 `start_download` / `download_note_images` / `download_zhihu_images`。
+- 重试（`history._retry_download`）必须传 `progress_callback` 保证历史页进度更新；重试不传 `note_info`（各下载函数自动回退提取）。
+- **`note_info` 预提取链路**：analyze 结果存 `analysis_result["urls_info"]`（per-URL dict）→ `download_note()` / `download_zhihu()` 取出 → `enqueue(note_info=...)` → `_worker()` 透传给 `download_note_images()` / `download_zhihu_images()`，跳过二次提取。新增下载入口无预提取数据时传 `note_info=None` 走自动回退。
+- `file_path` 对 douyin_note / zhihu_image 是**目录**（不是文件）；`/downloads-file/{id}/{filename}` 内部按 `is_dir()` 分支解析目录内文件。
+- 取消：`DownloadQueue.cancel(download_id)` 置位 `asyncio.Event`，下载函数检查后抛 `DownloadCancelledError` 并清理部分文件。
 
-## Docker 约束
+### 错误处理
 
-- Docker 以 `nicevid` (uid=1000) 用户运行，通过 `gosu` 降权。
-- `uv` 安装在 `/usr/local/bin/uv`（`update_ytdlp()` 依赖）。
-- HEALTHCHECK：`python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"`，间隔 30s。
-- Xvfb 不由 `entrypoint.sh` 启动，而是由 `browser_extractor._ensure_xvfb()` 在 Douyin 笔记提取时按需启动。
-- Playwright Chromium 安装路径：`/app/.cache/ms-playwright`（`PLAYWRIGHT_BROWSERS_PATH`）。
-- 数据持久化卷：`downloads/`（下载文件）、`data/`（SQLite DB + NiceGUI storage + Cookie 文件）。
-- Docker 构建分两阶段：builder 安装依赖 → final 复制 `.venv` + 源码 + Playwright。
-- **构建优化（层序 + cache mount）**：
-  - Dockerfile 使用 2 个 `--mount=type=cache`：uv 包下载（`/root/.cache/uv`）、apt 包（`/var/cache/apt` + `/var/lib/apt/lists`）。Playwright Chromium 二进制路径由 `PLAYWRIGHT_BROWSERS_PATH` 环境变量指定。修改依赖时不必从零下载。
-  - 层序按变更频率排列：用户创建 → `pyproject.toml`/`entrypoint.sh` → playwright install → `COPY src/`（最后）。代码变更只 invalidate 源码层，不触发依赖重装。
-  - 修改 `Dockerfile` 或 `.dockerignore` 后执行 `docker compose build --no-cache` 全量验证一次。
-- 资源限制：`docker-compose.yml` 已配置 `mem_limit: 2g` + `cpus: "4"`。Playwright/Chromium 内存峰值可达 800MB，加上 ffmpeg 转码很容易超过 1G，2G 保证功能可用不频繁 OOM。NAS 环境不要移除或大幅调高此限制。
+- 取消类异常必须透传：`except DownloadCancelledError: raise`；`_CancelledError` 在下载函数内转 `DownloadCancelledError`。
+- `_CancelledError` 统一在 `core/browser_extractor.py` 定义，供 `douyin_note.py` 与 `zhihu_answer.py` 导入。
+- `_download_sync`（ytdlp_handler.py）为**条件降级链**（非逐级无条件）：原始 →（字幕错误）去字幕 →（格式错误）去格式 → 去 cookie → 去 cookie+格式 → 最后手段（去 format+字幕）。`_extract_sync` 提取失败时自动去 cookie 重试。
+- `logger.exception()` 记录非预期异常完整 traceback。
 
-## Android 分享 API (`main.py`)
+### Cookie 管理（cookie_manager.py）
 
-- **路由**：`POST /api/share`（FastAPI 路由，通过 `@app.post` 注册在 `main.py`）
-- **两阶段流程**：
-  - **阶段一（分析）**：`{"url": "..."}` → `{"status": "analyzed", "type": "video", "title": "...", "thumbnail": "...", "duration": ..., "formats": [{label, format_id, ext, filesize, vcodec, acodec}, ...]}`
-  - **阶段二（下载）**：`{"url": "...", "format_id": "..."}` → `{"status": "ok", "download_id": 123, "title": "...", "type": "video"}`
-- **Douyin note**：始终单阶段自动下载，返回 `{"status": "ok", "download_id": 123, "title": "...", "type": "douyin_note"}`
-- **Zhihu answer/专栏**（图片）：同 Douyin note 单阶段自动下载，返回 `{"status": "ok", "download_id": 123, "title": "...", "type": "zhihu_image"}`
-- **核心函数**：`_do_share(url, format_id=None)` — 无 format_id 时分析返回推荐格式（调 `get_suggested_formats`），有时入队下载
-- **推荐格式**：`get_suggested_formats(formats)` 在 `ytdlp_handler.py`，按 ffmpeg 可用性生成 1080p/720p/仅音频等精简列表
-- **Android 交互**：阶段一返回后弹出 AlertDialog 单选列表 → 用户选择 → 阶段二携带 format_id 提交
-- **安全**：无内置认证（LAN 部署），敏感环境应通过反向代理（如 nginx basic auth）保护
-- **测试**：`tests/test_share_api.py` 使用 `unittest.mock.patch` mock `classify_urls`、`extract_info`、`extract_note_images`、`download_queue.enqueue`、`get_suggested_formats`
+- 目录经 `get_cookie_dir()` 获取（`VIDZAP_COOKIE_DIR` 优先，否则 `{NICEVID_DATA_DIR}/cookies`）。
+- DB 中 `cookie_file` 存相对路径 `{domain}.txt`，读取经 `_resolve_cookie_path()` 拼绝对路径。
+- 域名规范化：`normalize_domain()`（小写、去端口/www）；用户输入经 `extract_domain_from_input()` + `is_valid_domain()` 校验。
+- **`save_cookie()` 返回 `False` 表示内容无法解析为 Netscape/原始格式，调用方必须检查并提示用户**。通用原则：返回 `bool` 的自定义函数调用方不得忽略返回值。
+- `get_cookie(domain)` 返回单条记录 + `content`（文件内容，用于修改对话框预填；文件缺失时为空串）。
+- **`get_cookie_for_url(url)` 带子域后缀匹配**（精确 domain → 最长子域 → 反向父域），下载/分析流程一律用它取 cookie 文件。
+- 修改/删除入口：`/settings?edit=DOMAIN`、`/settings?delete=DOMAIN` URL 导航，`settings.render(edit_domain=..., delete_domain=...)` 页面加载后自动弹窗。
 
-## Android 原生 App
+### 数据库
 
-- **项目目录**：`android/`（Gradle + Kotlin 项目）
-- **包名**：`com.vidzap.share`
-- **架构**：双 Activity 设计
-  - `MainActivity`：桌面启动入口，立即跳转 `SettingsActivity`
-  - `ShareHandlerActivity`：接收 `ACTION_SEND`，使用 `Theme.VidZapShare.Dialog`（dialog 主题），**浮窗显示于当前 App 之上，不打断用户正在使用的 App**
-- **功能**：系统分享 → `ShareHandlerActivity` 浮窗弹出 → `POST /api/share` 分析 → 浮窗内 AlertDialog 列表选择画质 → `POST /api/share` 带 format_id → Toast 提示结果 → 自动消失（回到原先 App）
-- **启动**：首次使用需在 App 内配置 VidZap 服务器地址（`SharedPreferences` 持久化）
-- **构建**：用 Android Studio 打开 `android/` 目录即可同步并构建 APK
-- **行为**：`ShareHandlerActivity` 的 `noHistory=true` + `excludeFromRecents=true`，用户完成或取消后立即 finish，不留痕迹
+- 访问模式 `with get_connection() as conn:`（返回 `sqlite3.Row`）。
+- 表：`cookies`（domain UNIQUE）、`downloads`。
+- 迁移必须幂等：`init_db()` 内 `ALTER TABLE ... ADD COLUMN` 包 try/except。
+- 测试隔离：`conftest.py` 的 `_temp_db_dir`（autouse）猴子补丁 `NICEVID_DATA_DIR`；cookie 相关测试 `setup_method()` 需 `init_db()` + `init_cookie_dir()`。
+
+### URL 分类与站点要点
+
+- `home.py:classify_urls()` 返回 `video` / `douyin_note` / `zhihu_answer` / `mixed`；analyze 阶段遇混合类型直接报错，不部分处理。`split_existing_urls()` 逐 URL 重复检测，下载弹窗提供"跳过/覆盖/取消"。
+- Zhihu：回答（`question/{qid}/answer/{aid}`）、想法（`pin/{id}`）、专栏（`zhuanlan.zhihu.com/p/{id}`）三种 URL 走图片下载（`is_zhihu_image_url()`），httpx 直连无 Playwright。**zhihu.com 页面受 WAF 保护（zh-zse-ck），无有效 Cookie 时 403**，必须先配置 zhihu.com Cookie（`d_c0` 关键）。视频支持已放弃。下载目录 `downloads/zhihu/{kind}_{id}_{title}/`（kind: answer/pin/article）。
+- Douyin 笔记需 Playwright（Xvfb 按需启动 + stealth + cookie 注入），httpx 下载时从 cookie_file 提取 name=value 注入。
+- 页面含 Bilibili 图片时必须加 `<meta name="referrer" content="no-referrer">`（`home.py:render()` 已有，CDN 会拦截非 Bilibili Referer）。
+
+### Docker
+
+- 用户 `nicevid`（uid=1000）经 `gosu` 降权；`uv` 固定在 `/usr/local/bin/uv`（`update_ytdlp()` subprocess 依赖）。
+- Xvfb 不由 entrypoint 启动，由 `browser_extractor._ensure_xvfb()` 按需启动。
+- `PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright`；持久化卷：`downloads/`、`data/`。
+- `docker-compose.yml` 固定 `mem_limit: 2g` + `cpus: "4"`（Chromium 峰值 800MB + ffmpeg 易超 1G），勿移除或大幅调高。
+- 修改 `Dockerfile` / `.dockerignore` 后执行 `docker compose build --no-cache` 全量验证。
+
+### Android 分享 API（`POST /api/share`，main.py）
+
+- **阶段一** `{"url"}` → `{"status":"analyzed", "type":"video", "title", "thumbnail", "duration", "formats":[{label, format_id, ext, filesize, vcodec, acodec}]}`（`get_suggested_formats()` 按 ffmpeg 可用性精简推荐）。
+- **阶段二** `{"url", "format_id"}` → `{"status":"ok", "download_id", "title", "type":"video"}`。
+- douyin_note / zhihu_answer：单阶段自动下载，type 分别为 `douyin_note` / `zhihu_image`。
+- 核心 `_do_share(url, format_id=None)`；无内置认证（LAN 部署），敏感环境用反向代理保护。
+- Android App（`android/`，包名 `com.vidzap.share`）：`MainActivity`（启动即跳转设置页）、`ShareHandlerActivity`（`ACTION_SEND`，dialog 主题浮窗，`noHistory` + `excludeFromRecents`）。
 
 ## 数据流
 
 ```
-URL 输入 → classify_urls() → extract_info() / extract_zhihu_answer()
-  ├─ "video" → extract_info() → 格式选择 → download_queue.enqueue() → _worker()
-  │             → start_download() → _download_sync() [5级降级重试] (yt-dlp cookiefile)
-  ├─ "douyin_note" → extract_note_images() → download_queue.enqueue() → _worker()
-  │             → download_note_images()
-  │               ├─ note_info 已存在 → 跳过 Playwright，直接 httpx 下载 (注入 cookie)
-  │               └─ note_info 不存在 → NoteExtractor.extract() (Playwright, 注入 cookie)
-  │                                       → httpx 下载 (注入 cookie)
-  └─ "zhihu_answer" → extract_zhihu_answer() (httpx, 需 zhihu Cookie，回答/想法/专栏)
-             → download_queue.enqueue()
-               └─ "zhihu_image" → download_zhihu_images()
-                                   ├─ note_info 已存在 → 直接 httpx 下载
-                                   └─ note_info 不存在 → extract_zhihu_answer() → httpx 下载
+URL 输入 → classify_urls()（混合类型报错）→ split_existing_urls()（跳过/覆盖/取消）
+  ├─ "video" → extract_info()（60s 超时，失败去 cookie 重试）→ 格式选择
+  │             → download_queue.enqueue() → _worker() → start_download()
+  │             → _download_sync() [条件降级链]（yt-dlp cookiefile）
+  ├─ "douyin_note" → extract_note_images()（Playwright+Xvfb，cookie 注入）
+  │             → download_queue.enqueue(task_type="douyin_note", note_info=...)
+  │             → _worker() → download_note_images()
+  │               ├─ note_info 存在 → 跳过 Playwright，直接 httpx 下载（注入 cookie）
+  │               └─ note_info 缺失 → extract_note_images() → httpx 下载
+  └─ "zhihu_answer" → extract_zhihu_answer()（httpx，需 zhihu Cookie，回答/想法/专栏）
+             → download_queue.enqueue(task_type="zhihu_image", note_info=...)
+             → _worker() → download_zhihu_images()
+               ├─ note_info 存在 → 直接 httpx 下载
+               └─ note_info 缺失 → extract_zhihu_answer() → httpx 下载
 
-Android 分享 API 数据流：
+Android 分享 API：
   POST /api/share {"url"} → _do_share(url) → classify → extract_info → get_suggested_formats
-    → return {status:"analyzed", formats: [...]}  (Android AlertDialog 选择)
-  POST /api/share {"url", "format_id"} → _do_share(url, format_id)
+    → {status:"analyzed", formats:[...]}（App 内 AlertDialog 选择画质）
+  POST /api/share {"url","format_id"} → _do_share(url, format_id)
     → create_download_record → download_queue.enqueue()
-  Zhihu answer/专栏 (图片)：单阶段自动下载 → download_zhihu_images()
+  douyin_note / zhihu_answer：单阶段自动下载
 ```
+
+## 详见 doc/DEVELOPMENT.md
+
+- NiceGUI API 经验：原地更新 vs 重建、`response_timeout`、`app.timer` vs `ui.timer`、`ui.query`、`@ui.refreshable`、`app.add_media_files`、`run_method` 等
+- 站点踩坑：Bilibili 412 bug（yt-dlp 版本下限原因）、`FFmpegThumbnailsConvertor` when 参数、YouTube 字幕 429、Douyin Xvfb/stealth/批量串行防限流、Zhihu WAF Cookie 细节、Bilibili CDN Referer
+- Docker 构建优化（层序 + cache mount）与 2G 资源限制决策
