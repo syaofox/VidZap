@@ -28,6 +28,14 @@ Path(os.environ.get("NICEVID_DATA_DIR", "data")).mkdir(parents=True, exist_ok=Tr
 init_db()
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    """解析布尔环境变量：1/true/yes/on（不区分大小写）视为真，其余为假。"""
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @app.get("/downloads-file/{download_id}/{filename:path}")
 def serve_download_file(download_id: int, filename: str):
     """按下载记录 ID 提供文件下载/预览"""
@@ -238,7 +246,7 @@ def history_page() -> None:
 
 
 if __name__ in {"__main__", "__mp_main__"}:
-    _reload = os.environ.get("NICEVID_RELOAD", "").lower() == "true"
+    _reload = _env_bool("NICEVID_RELOAD")
     _storage_secret = os.environ.get(
         "NICEVID_STORAGE_SECRET", "nicevid-secret-key-change-in-production"
     )

@@ -1,4 +1,6 @@
 """Tests for core.version."""
+from pathlib import Path
+
 from core.version import get_app_version
 
 
@@ -16,3 +18,16 @@ class TestGetAppVersion:
         assert len(parts) >= 2
         for part in parts:
             assert part.isdigit() or "-" in part
+
+    def test_missing_file_falls_back(self, monkeypatch):
+        """pyproject.toml 缺失时应回退 "unknown" 而不是抛异常。"""
+        from core import version as version_mod
+
+        version_mod.get_app_version.cache_clear()
+        try:
+            monkeypatch.setattr(
+                version_mod, "_PROJECT_ROOT", Path("/nonexistent/vidzap")
+            )
+            assert version_mod.get_app_version() == "unknown"
+        finally:
+            version_mod.get_app_version.cache_clear()

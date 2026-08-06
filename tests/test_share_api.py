@@ -223,3 +223,29 @@ class TestDoShareErrors:
 
             with pytest.raises(ValueError, match="不支持的链接类型"):
                 await _do_share("https://example.com/anything")
+
+
+class TestEnvBool:
+    """main._env_bool 布尔环境变量解析。"""
+
+    @pytest.mark.parametrize("val", ["true", "TRUE", "True", "1", "yes", "on", " ON "])
+    def test_truthy_variants(self, monkeypatch, val):
+        from main import _env_bool
+
+        monkeypatch.setenv("VIDZAP_TEST_BOOL", val)
+        assert _env_bool("VIDZAP_TEST_BOOL") is True
+
+    @pytest.mark.parametrize("val", ["false", "FALSE", "0", "no", "off", ""])
+    def test_falsy_variants(self, monkeypatch, val):
+        from main import _env_bool
+
+        monkeypatch.setenv("VIDZAP_TEST_BOOL", val)
+        assert _env_bool("VIDZAP_TEST_BOOL") is False
+
+    def test_default_when_unset(self, monkeypatch):
+        from main import _env_bool
+
+        monkeypatch.delenv("VIDZAP_TEST_BOOL", raising=False)
+        assert _env_bool("VIDZAP_TEST_BOOL") is False
+        assert _env_bool("VIDZAP_TEST_BOOL", default=True) is True
+
