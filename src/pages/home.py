@@ -20,10 +20,11 @@ from core.ytdlp_handler import (
     update_ytdlp,
 )
 from core.zhihu_answer import (
-    extract_zhihu_answer as _extract_zhihu_answer,
+    ZhihuAccessError,
+    is_zhihu_image_url,
 )
 from core.zhihu_answer import (
-    is_zhihu_image_url,
+    extract_zhihu_answer as _extract_zhihu_answer,
 )
 
 
@@ -586,9 +587,11 @@ def render() -> None:
 
                 try:
                     zhihu_image_info = await _extract_zhihu_answer(urls[0], cookie)
+                except ZhihuAccessError as e:
+                    raise ValueError(str(e)) from None
                 except httpx.HTTPStatusError:
                     raise ValueError(
-                        "知乎页面访问失败（403），请先在设置中配置有效的知乎 Cookie"
+                        "知乎页面访问失败（非 403 错误），请稍后重试"
                     ) from None
                 analysis_result["info"] = zhihu_image_info
                 analysis_result["is_note"] = False

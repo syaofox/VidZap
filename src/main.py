@@ -102,7 +102,7 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
 
     if url_type == "zhihu_answer":
         from core.download_queue import download_queue
-        from core.zhihu_answer import extract_zhihu_answer
+        from core.zhihu_answer import ZhihuAccessError, extract_zhihu_answer
 
         try:
             zhihu_info = await asyncio.wait_for(
@@ -111,6 +111,8 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
             )
         except ValueError:
             raise
+        except ZhihuAccessError as e:
+            raise ValueError(str(e)) from e
         except Exception as e:
             raise ValueError(f"知乎页面访问失败，请检查 Cookie 是否有效: {e}") from e
 
@@ -234,9 +236,9 @@ def index() -> None:
 
 
 @ui.page("/settings")
-def settings_page(edit: str = "", delete: str = "") -> None:
+def settings_page(edit: str = "", delete: str = "", test: str = "") -> None:
     ui.query('.nicegui-content').style('max-width: 1200px; margin: 0 auto;')
-    settings.render(edit_domain=edit, delete_domain=delete)
+    settings.render(edit_domain=edit, delete_domain=delete, test_domain=test)
 
 
 @ui.page("/history")

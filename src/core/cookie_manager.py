@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -108,8 +109,6 @@ def _is_netscape_format(content: str) -> bool:
 
 
 def _raw_to_netscape(content: str, domain: str) -> str:
-    import time
-
     lines = ["# Netscape HTTP Cookie File"]
     text = content.strip()
     if text.startswith("Cookie:"):
@@ -201,6 +200,93 @@ def list_cookies() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM cookies ORDER BY domain").fetchall()
         return [dict(row) for row in rows]
+
+
+def parse_cookie_expiry(content: str) -> dict[str, int | None]:
+    """解析 Netscape cookie 文件中每个 cookie 的过期时间。
+
+    Returns:
+        {cookie_name: epoch 秒或 None}；None 表示会话级 cookie
+        （expires 为 0 或非法值，浏览器关闭即失效）。
+    """
+    result: dict[str, int | None] = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        name = parts[5]
+        if not name:
+            continue
+        try:
+            expiry = int(parts[4])
+        except ValueError:
+            expiry = 0
+        # Netscape 格式中 expires=0 表示会话级 cookie（浏览器关闭即失效）
+        result[name] = expiry if expiry > 0 else None
+    return result
+
+
+def _expiry_summary(content: str) -> dict:
+    """汇总 cookie 文件的过期状态（供设置页展示）。
+
+    Returns:
+        {
+            "count": int,           # 可解析 cookie 数
+            "expired": int,         # 已过期 cookie 数
+            "session": int,         # 会话级 cookie 数
+            "valid_until": int | None,  # 全部有效时最早过期时间
+            "status": str,          # "valid" / "expired" / "session" / "empty"
+        }
+    """
+    parsed = parse_cookie_expiry(content)
+    if not parsed:
+        return {
+            "count": 0,
+            "expired": 0,
+            "session": 0,
+            "valid_until": None,
+            "status": "empty",
+        }
+    now = int(time.time())
+    expires: list[int] = []
+    expired = 0
+    session = 0
+    for exp in parsed.values():
+        if exp is None:
+            session += 1
+        elif exp < now:
+            expired += 1
+        else:
+            expires.append(exp)
+    if expired:
+        status = "expired"
+    elif session:
+        status = "session"
+    else:
+        status = "valid"
+    return {
+        "count": len(parsed),
+        "expired": expired,
+        "session": session,
+        "valid_until": min(expires) if expires else None,
+        "status": status,
+    }
+
+
+def list_cookies_with_expiry() -> list[dict]:
+    """列出所有 cookie 并附带过期状态总结（设置页表格用）。"""
+    rows = list_cookies()
+    for row in rows:
+        path = _resolve_cookie_path(str(row["cookie_file"]))
+        try:
+            content = Path(path).read_text()
+        except OSError:
+            content = ""
+        row["expiry"] = _expiry_summary(content)
+    return rows
 
 
 def delete_cookie(domain: str) -> bool:

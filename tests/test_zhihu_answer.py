@@ -1,21 +1,29 @@
 """Tests for core.zhihu_answer module."""
 import asyncio
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from core.browser_extractor import _CancelledError as _BE_CancelledError
 from core.ytdlp_handler import DownloadCancelledError
 from core.zhihu_answer import (
+    ZhihuAccessError,
+    _cookies_to_netscape,
     _extract_images_from_html,
     _extract_title,
+    _fallback_domain,
+    _fetch_answer_page,
     _guess_extension,
     _normalize_image_url,
     _parse_cookies,
+    _persist_cookie_updates,
     download_zhihu_images,
     extract_zhihu_answer,
     is_zhihu_answer_url,
+    verify_cookie,
 )
 
 _ZHIHU_ANSWER_URL = "https://www.zhihu.com/question/123/answer/456"
@@ -396,6 +404,257 @@ class TestExtractZhihuAnswer:
 
             _, kwargs = mock_client_instance.get.call_args
             assert mock_client_instance.get.called
+
+
+class TestZhihuAccessError:
+    @pytest.mark.asyncio
+    async def test_403_without_cookie_raises_missing_message(self):
+        with patch("core.zhihu_answer.httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 403
+            mock_client_instance = mock_client.return_value.__aenter__.return_value
+            mock_client_instance.get.return_value = mock_resp
+
+            with pytest.raises(ZhihuAccessError, match="未配置"):
+                await extract_zhihu_answer(_ZHIHU_ANSWER_URL)
+
+    @pytest.mark.asyncio
+    async def test_403_with_cookie_raises_expired_message(self, tmp_path):
+        cookie_file = tmp_path / "zhihu.txt"
+        cookie_file.write_text(
+            ".zhihu.com\tTRUE\t/\tFALSE\t1767225600\tz_c0\tabc123\n"
+        )
+        with patch("core.zhihu_answer.httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 403
+            mock_client_instance = mock_client.return_value.__aenter__.return_value
+            mock_client_instance.get.return_value = mock_resp
+
+            with pytest.raises(ZhihuAccessError, match="失效"):
+                await extract_zhihu_answer(_ZHIHU_ANSWER_URL, str(cookie_file))
+
+    @pytest.mark.asyncio
+    async def test_other_status_still_raises_http_error(self):
+        with patch("core.zhihu_answer.httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 500
+            mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "500", request=MagicMock(), response=mock_resp
+            )
+            mock_client_instance = mock_client.return_value.__aenter__.return_value
+            mock_client_instance.get.return_value = mock_resp
+
+            with pytest.raises(httpx.HTTPStatusError):
+                await extract_zhihu_answer(_ZHIHU_ANSWER_URL)
+
+
+class TestVerifyCookie:
+    @pytest.mark.asyncio
+    async def test_verify_success(self, tmp_path):
+        cookie_file = tmp_path / "zhihu.txt"
+        cookie_file.write_text(
+            ".zhihu.com\tTRUE\t/\tFALSE\t1767225600\tz_c0\tabc123\n"
+        )
+        with patch("core.zhihu_answer.httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_client_instance = mock_client.return_value.__aenter__.return_value
+            mock_client_instance.get.return_value = mock_resp
+
+            assert await verify_cookie(str(cookie_file)) is True
+
+    @pytest.mark.asyncio
+    async def test_verify_403_fails(self, tmp_path):
+        cookie_file = tmp_path / "zhihu.txt"
+        cookie_file.write_text(
+            ".zhihu.com\tTRUE\t/\tFALSE\t1767225600\tz_c0\tabc123\n"
+        )
+        with patch("core.zhihu_answer.httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 403
+            mock_client_instance = mock_client.return_value.__aenter__.return_value
+            mock_client_instance.get.return_value = mock_resp
+
+            assert await verify_cookie(str(cookie_file)) is False
+
+    @pytest.mark.asyncio
+    async def test_verify_no_cookie_file(self):
+        assert await verify_cookie(None) is False
+        assert await verify_cookie("") is False
+
+    @pytest.mark.asyncio
+    async def test_verify_empty_cookie_file(self, tmp_path):
+        cookie_file = tmp_path / "zhihu.txt"
+        cookie_file.write_text("# only comment\n")
+        assert await verify_cookie(str(cookie_file)) is False
+
+    @pytest.mark.asyncio
+    async def test_verify_network_error(self, tmp_path):
+        cookie_file = tmp_path / "zhihu.txt"
+        cookie_file.write_text(
+            ".zhihu.com\tTRUE\t/\tFALSE\t1767225600\tz_c0\tabc123\n"
+        )
+        with patch("core.zhihu_answer.httpx.AsyncClient") as mock_client:
+            mock_client_instance = mock_client.return_value.__aenter__.return_value
+            mock_client_instance.get.side_effect = httpx.ConnectError("boom")
+
+            assert await verify_cookie(str(cookie_file)) is False
+
+
+class TestCookiePersistence:
+    def _make_client_with_cookies(self, initial: dict[str, str]) -> httpx.AsyncClient:
+        cookies = httpx.Cookies()
+        for name, value in initial.items():
+            cookies.set(name, value, domain="zhihu.com", path="/")
+        client = httpx.AsyncClient(cookies=cookies)
+        return client
+
+    def _apply_set_cookie(self, client: httpx.AsyncClient, set_cookie: str) -> None:
+        resp = httpx.Response(
+            200,
+            headers={"set-cookie": set_cookie},
+            request=httpx.Request("GET", "https://www.zhihu.com/"),
+        )
+        client.cookies.extract_cookies(resp)
+
+    def test_fallback_domain(self):
+        assert _fallback_domain("https://www.zhihu.com/question/1/answer/2") == ".zhihu.com"
+        assert _fallback_domain("https://zhuanlan.zhihu.com/p/1") == ".zhuanlan.zhihu.com"
+        assert _fallback_domain("not-a-url") == ".zhihu.com"
+
+    @pytest.mark.asyncio
+    async def test_cookies_to_netscape_basic(self):
+        client = self._make_client_with_cookies({"z_c0": "abc"})
+        result = _cookies_to_netscape(client.cookies, ".zhihu.com")
+        await client.aclose()
+        assert result.startswith("# Netscape HTTP Cookie File")
+        assert "z_c0" in result
+        assert "abc" in result
+
+    @pytest.mark.asyncio
+    async def test_cookies_to_netscape_roundtrip(self, tmp_path):
+        client = self._make_client_with_cookies({"z_c0": "old"})
+        self._apply_set_cookie(client, "z_c0=new; Path=/; Domain=.zhihu.com")
+        cookie_file = tmp_path / "zhihu.txt"
+        _persist_cookie_updates(client, str(cookie_file), _fallback_domain("https://www.zhihu.com/"))
+        await client.aclose()
+
+        content = cookie_file.read_text()
+        assert content.startswith("# Netscape HTTP Cookie File")
+        assert "z_c0" in content
+        assert "new" in content
+        assert "old" not in content
+        assert _parse_cookies(str(cookie_file))["z_c0"] == "new"
+
+    @pytest.mark.asyncio
+    async def test_cookies_to_netscape_skips_expired(self, tmp_path):
+        from http.cookiejar import Cookie as JarCookie
+
+        client = self._make_client_with_cookies({"good": "1"})
+        expired = JarCookie(
+            version=0,
+            name="expired",
+            value="x",
+            port=None,
+            port_specified=False,
+            domain="zhihu.com",
+            domain_specified=True,
+            domain_initial_dot=False,
+            path="/",
+            path_specified=True,
+            secure=False,
+            expires=time.time() - 10,
+            discard=False,
+            comment=None,
+            comment_url=None,
+            rest={},
+            rfc2109=False,
+        )
+        client.cookies.jar.set_cookie(expired)
+        cookie_file = tmp_path / "zhihu.txt"
+        _persist_cookie_updates(client, str(cookie_file), ".zhihu.com")
+        await client.aclose()
+        content = cookie_file.read_text()
+        assert "expired" not in content
+        assert "good" in content
+
+    @pytest.mark.asyncio
+    async def test_persist_no_cookie_file_noop(self):
+        client = httpx.AsyncClient()
+        _persist_cookie_updates(client, None, ".zhihu.com")
+        _persist_cookie_updates(client, "", ".zhihu.com")
+        await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_fetch_persists_set_cookie(self, tmp_path):
+        cookie_file = tmp_path / "zhihu.txt"
+        cookie_file.write_text(
+            ".zhihu.com\tTRUE\t/\tFALSE\t1767225600\tz_c0\told\n"
+        )
+        real_cookies = httpx.Cookies()
+        real_cookies.set("z_c0", "old", domain="zhihu.com", path="/")
+        resp = httpx.Response(
+            200,
+            text="<html></html>",
+            headers={"set-cookie": "z_c0=new; Path=/; Domain=.zhihu.com"},
+            request=httpx.Request("GET", _ZHIHU_ANSWER_URL),
+        )
+        real_cookies.extract_cookies(resp)
+        with patch("core.zhihu_answer.httpx.AsyncClient") as mock_client:
+            mock_client_instance = mock_client.return_value.__aenter__.return_value
+            mock_client_instance.cookies = real_cookies
+            mock_client_instance.get.return_value = resp
+
+            html = await _fetch_answer_page(_ZHIHU_ANSWER_URL, str(cookie_file))
+
+        assert html == "<html></html>"
+        assert _parse_cookies(str(cookie_file))["z_c0"] == "new"
+
+    @pytest.mark.asyncio
+    async def test_fetch_403_does_not_persist(self, tmp_path):
+        cookie_file = tmp_path / "zhihu.txt"
+        cookie_file.write_text(
+            ".zhihu.com\tTRUE\t/\tFALSE\t1767225600\tz_c0\tabc123\n"
+        )
+        real_cookies = httpx.Cookies()
+        real_cookies.set("z_c0", "abc123", domain="zhihu.com", path="/")
+        with patch("core.zhihu_answer.httpx.AsyncClient") as mock_client:
+            mock_client_instance = mock_client.return_value.__aenter__.return_value
+            mock_client_instance.cookies = real_cookies
+            resp = httpx.Response(
+                403,
+                headers={"set-cookie": "z_c0=; Path=/; Max-Age=0"},
+                request=httpx.Request("GET", _ZHIHU_ANSWER_URL),
+            )
+            mock_client_instance.get.return_value = resp
+
+            with pytest.raises(ZhihuAccessError):
+                await _fetch_answer_page(_ZHIHU_ANSWER_URL, str(cookie_file))
+
+        assert _parse_cookies(str(cookie_file))["z_c0"] == "abc123"
+
+    @pytest.mark.asyncio
+    async def test_verify_persists_set_cookie(self, tmp_path):
+        cookie_file = tmp_path / "zhihu.txt"
+        cookie_file.write_text(
+            ".zhihu.com\tTRUE\t/\tFALSE\t1767225600\tz_c0\told\n"
+        )
+        real_cookies = httpx.Cookies()
+        real_cookies.set("z_c0", "old", domain="zhihu.com", path="/")
+        resp = httpx.Response(
+            200,
+            headers={"set-cookie": "z_c0=new; Path=/; Domain=.zhihu.com"},
+            request=httpx.Request("GET", "https://www.zhihu.com/"),
+        )
+        real_cookies.extract_cookies(resp)
+        with patch("core.zhihu_answer.httpx.AsyncClient") as mock_client:
+            mock_client_instance = mock_client.return_value.__aenter__.return_value
+            mock_client_instance.cookies = real_cookies
+            mock_client_instance.get.return_value = resp
+
+            assert await verify_cookie(str(cookie_file)) is True
+
+        assert _parse_cookies(str(cookie_file))["z_c0"] == "new"
 
 
 class TestDownloadZhihuImages:

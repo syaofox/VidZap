@@ -32,8 +32,8 @@ uv lock                     # pyproject.toml 变动后必须执行，pyproject.t
 ### 异步并发（NiceGUI UI 上下文）
 
 - **禁止裸 `asyncio.create_task()` / `asyncio.ensure_future()`**，必须用 `background_tasks.create(coro())`（NiceGUI 官方禁止，GC 会取消任务且异常静默丢失）。仅独立基础设施模块（如 `DownloadQueue`）可用 `asyncio.ensure_future()`。
-- **禁止 `run_in_executor`**：用 `await run.io_bound(sync_fn, ...)` / `run.cpu_bound(...)`；超时用 `await asyncio.wait_for(..., timeout=...)`（提取类统一 60s）。
-- **background task 内禁止访问 `ui.context.client`**（无 slot context 会抛 RuntimeError）：在 `background_tasks.create()` 之前捕获 `client = ui.context.client`，闭包内用 `getattr(client, "_deleted", False)` 检查（I/O 前后双守卫）。
+- **禁止 `run_in_executor`**：用 `await run.io_bound(sync_fn, ...)` / `run.cpu_bound(...)`；超时用 `await asyncio.wait_for(..., timeout=...)`（视频提取 `extract_info()` 内部 60s，分享 API 30s；home.py 的 douyin/zhihu 提取无外层 wait_for，靠 httpx timeout=30 / Playwright 内部超时兜底）。
+- **background task 内禁止访问 `ui.context.client`**（无 slot context 会抛 RuntimeError）：在 `background_tasks.create()` 之前捕获 `client = ui.context.client`，闭包内用 `getattr(client, "_deleted", False)` 检查（I/O 前后双守卫）。**`ui.notify` 内部也依赖 `context.client`，同样不可用**——需要 notify/建 UI 时用 `with container_element:` 显式进入目标 slot（实例：`settings.py:_run_cookie_test`）。
 - Timer 回调内先查 `ui.context.client._deleted` 再操作 UI。
 - Dialog 用 await 模式（`with ui.dialog() as dialog, ui.card():` + `result = await dialog` + `dialog.submit(value)`），**禁止 `dialog.on_submit`**。
 - 模块级变量在所有用户/标签页间共享（单进程），需要隔离用 `app.storage.user` 或 `@ui.page` 内局部变量（`history._download_progress` 是故意的全局进度缓存）。
@@ -61,6 +61,9 @@ uv lock                     # pyproject.toml 变动后必须执行，pyproject.t
 - **`save_cookie()` 返回 `False` 表示内容无法解析为 Netscape/原始格式，调用方必须检查并提示用户**。通用原则：返回 `bool` 的自定义函数调用方不得忽略返回值。
 - `get_cookie(domain)` 返回单条记录 + `content`（文件内容，用于修改对话框预填；文件缺失时为空串）。
 - **`get_cookie_for_url(url)` 带子域后缀匹配**（精确 domain → 最长子域 → 反向父域），下载/分析流程一律用它取 cookie 文件。
+- **过期状态**：`list_cookies_with_expiry()` / `parse_cookie_expiry()` 供设置页展示；Netscape expires=0 或非法值视为会话级。
+- **zhihu.com 403 必须抛 `ZhihuAccessError`**（zhihu_answer.py，区分"未配置/已失效"消息）；`verify_cookie(cookie_file)` 请求首页验证（200=有效），设置页保存 zhihu Cookie 后自动验证 + `/settings?test=DOMAIN` 手动验证。
+- **zhihu 请求成功后必须 Set-Cookie 回写**：`_fetch_answer_page()` / `verify_cookie()` 2xx 后调用 `_persist_cookie_updates()`（httpx jar → Netscape 写回，`_cookies_to_netscape()`），403 不回写。
 - 修改/删除入口：`/settings?edit=DOMAIN`、`/settings?delete=DOMAIN` URL 导航，`settings.render(edit_domain=..., delete_domain=...)` 页面加载后自动弹窗。
 
 ### 数据库

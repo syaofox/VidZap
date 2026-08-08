@@ -1,8 +1,11 @@
 """Tests for core.cookie_manager."""
 
+import time
+
 import pytest
 
 from core.cookie_manager import (
+    _expiry_summary,
     _is_netscape_format,
     _normalize_cookie_content,
     _raw_to_netscape,
@@ -14,7 +17,9 @@ from core.cookie_manager import (
     init_cookie_dir,
     is_valid_domain,
     list_cookies,
+    list_cookies_with_expiry,
     normalize_domain,
+    parse_cookie_expiry,
     save_cookie,
 )
 from core.db import init_db
@@ -467,3 +472,102 @@ class TestGetCookie:
         result = get_cookie("www.YouTube.com")
         assert result is not None
         assert result["domain"] == "youtube.com"
+
+
+# =============================================================================
+# Cookie 过期时间解析
+# =============================================================================
+
+
+class TestParseCookieExpiry:
+    def test_parses_expiry_and_session(self):
+        content = (
+            "# Netscape HTTP Cookie File\n"
+            ".zhihu.com\tTRUE\t/\tFALSE\t1767225600\tz_c0\tabc123\n"
+            ".zhihu.com\tTRUE\t/\tTRUE\t0\td_c0\tdef456\n"
+        )
+        result = parse_cookie_expiry(content)
+        assert result["z_c0"] == 1767225600
+        assert result["d_c0"] is None
+
+    def test_empty_and_comments(self):
+        assert parse_cookie_expiry("") == {}
+        assert parse_cookie_expiry("# only comment\n") == {}
+
+    def test_invalid_expiry_is_session(self):
+        content = ".zhihu.com\tTRUE\t/\tFALSE\tnotanumber\ta\t1\n"
+        assert parse_cookie_expiry(content)["a"] is None
+
+    def test_skips_malformed_lines(self):
+        content = (
+            "garbage\n"
+            ".x.com\tTRUE\t/\tFALSE\t123456\t\t\n"
+            ".x.com\tTRUE\t/\tFALSE\t123456\tname\tvalue\n"
+        )
+        result = parse_cookie_expiry(content)
+        assert result == {"name": 123456}
+
+
+class TestExpirySummary:
+    def test_all_valid(self):
+        future = int(time.time()) + 86400
+        content = f".zhihu.com\tTRUE\t/\tFALSE\t{future}\tz_c0\tabc\n"
+        summary = _expiry_summary(content)
+        assert summary["status"] == "valid"
+        assert summary["count"] == 1
+        assert summary["expired"] == 0
+        assert summary["session"] == 0
+        assert summary["valid_until"] == future
+
+    def test_expired(self):
+        past = int(time.time()) - 10
+        content = f".zhihu.com\tTRUE\t/\tFALSE\t{past}\tz_c0\tabc\n"
+        summary = _expiry_summary(content)
+        assert summary["status"] == "expired"
+        assert summary["expired"] == 1
+
+    def test_session_cookie(self):
+        content = ".zhihu.com\tTRUE\t/\tFALSE\t0\tz_c0\tabc\n"
+        summary = _expiry_summary(content)
+        assert summary["status"] == "session"
+        assert summary["session"] == 1
+
+    def test_expired_takes_priority_over_session(self):
+        past = int(time.time()) - 10
+        content = (
+            f".zhihu.com\tTRUE\t/\tFALSE\t{past}\tz_c0\tabc\n"
+            ".zhihu.com\tTRUE\t/\tFALSE\t0\td_c0\tdef\n"
+        )
+        summary = _expiry_summary(content)
+        assert summary["status"] == "expired"
+
+    def test_empty(self):
+        summary = _expiry_summary("")
+        assert summary["status"] == "empty"
+        assert summary["count"] == 0
+
+
+class TestListCookiesWithExpiry:
+    def setup_method(self):
+        init_db()
+        init_cookie_dir()
+
+    def test_with_valid_file(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+
+        save_cookie("zhihu.com", "z_c0=abc")
+        rows = list_cookies_with_expiry()
+        row = next(r for r in rows if r["domain"] == "zhihu.com")
+        assert row["expiry"]["status"] == "valid"
+        assert row["expiry"]["count"] == 1
+
+    def test_missing_file(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VIDZAP_COOKIE_DIR", str(tmp_path / "cookies"))
+        init_cookie_dir()
+
+        save_cookie("example.com", "x=1")
+        (tmp_path / "cookies" / "example.com.txt").unlink()
+        rows = list_cookies_with_expiry()
+        row = next(r for r in rows if r["domain"] == "example.com")
+        assert row["expiry"]["status"] == "empty"

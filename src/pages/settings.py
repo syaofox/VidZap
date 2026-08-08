@@ -1,16 +1,40 @@
-from nicegui import background_tasks, run, ui
+from datetime import datetime
+
+from nicegui import Client, background_tasks, run, ui
 
 from core.cookie_manager import (
     delete_cookie,
     extract_domain_from_input,
     get_cookie,
+    get_cookie_dir,
     is_valid_domain,
-    list_cookies,
+    list_cookies_with_expiry,
     save_cookie,
 )
 
 
-def render(edit_domain: str = "", delete_domain: str = "") -> None:
+def _is_zhihu_domain(domain: str) -> bool:
+    """zhihu.com 及其子域（www.zhihu.com / zhuanlan.zhihu.com 等）。"""
+    return domain == "zhihu.com" or domain.endswith(".zhihu.com")
+
+
+def _expiry_display(expiry: dict) -> tuple[str, str]:
+    """返回 (显示文本, 颜色 class)（供表格过期状态列使用）。"""
+    status = expiry.get("status")
+    if status == "expired":
+        return f"已过期 ({expiry['expired']})", "text-negative"
+    if status == "session":
+        return f"含会话级 cookie ({expiry['session']})", "text-grey-7"
+    if status == "valid":
+        until = expiry.get("valid_until")
+        if until:
+            date_str = datetime.fromtimestamp(until).strftime("%Y-%m-%d")
+            return f"有效至 {date_str}", "text-positive"
+        return "有效", "text-positive"
+    return "—", "text-grey-7"
+
+
+def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = "") -> None:
     """渲染 Cookie 设置页面"""
     ui.on_exception(lambda e: ui.notify(f"页面错误: {e}", type="negative"))
 
@@ -35,14 +59,19 @@ def render(edit_domain: str = "", delete_domain: str = "") -> None:
             if getattr(_cookies_client, "_deleted", False):
                 return
             cookie_table_container.clear()
-            rows = await run.io_bound(list_cookies)
+            rows = await run.io_bound(list_cookies_with_expiry)
             if getattr(_cookies_client, "_deleted", False):
                 return
+            for row in rows:
+                text, color = _expiry_display(row["expiry"])
+                row["expiry"]["display"] = text
+                row["expiry"]["class"] = color
             with cookie_table_container:
                 cookie_table_ref["table"] = ui.table(
                     columns=[
                         {"name": "domain", "label": "域名", "field": "domain"},
                         {"name": "created_at", "label": "添加时间", "field": "created_at"},
+                        {"name": "expiry", "label": "过期状态", "field": "expiry"},
                         {"name": "actions", "label": "操作", "field": "actions", "align": "right"},
                     ],
                     rows=rows,
@@ -51,9 +80,24 @@ def render(edit_domain: str = "", delete_domain: str = "") -> None:
                     pagination=10,
                 ).classes("w-full")
 
+                cookie_table_ref["table"].add_slot('body-cell-expiry', '''
+                    <td :props="props">
+                        <span :class="props.value ? props.value.class : 'text-grey-7'">
+                            {{ props.value ? props.value.display : '—' }}
+                        </span>
+                    </td>
+                ''')
+
                 cookie_table_ref["table"].add_slot('body-cell-actions', '''
                     <td :props="props"
                         style="white-space: nowrap; padding: 0 4px 0 0; text-align: right;">
+                        <a :href="'/settings?test=' + encodeURIComponent(props.row.domain)"
+                           v-if="props.row.domain === 'zhihu.com' ||
+                                 props.row.domain.endsWith('.zhihu.com')"
+                           class="text-primary q-ml-xs" style="text-decoration: none;"
+                           title="验证知乎 Cookie 是否有效">
+                            <q-icon name="verified_user" size="xs"></q-icon>
+                        </a>
                         <a :href="'/settings?edit=' + encodeURIComponent(props.row.domain)"
                            class="text-primary" style="text-decoration: none;">
                             <q-icon name="edit" size="xs"></q-icon>
@@ -74,6 +118,37 @@ def render(edit_domain: str = "", delete_domain: str = "") -> None:
                     )
 
         background_tasks.create(_load_cookies())
+
+    async def _run_cookie_test(domain: str, client: Client) -> None:
+        """验证指定域名的知乎 Cookie 并提示结果。
+
+        client 必须由调用方在创建 background task 之前捕获：
+        background task 内无 slot context（ui.context.client 会抛 RuntimeError），
+        需用 `with cookie_table_container:` 显式进入 slot 才能 notify。
+        """
+        from core.zhihu_answer import verify_cookie
+
+        cookie_data = get_cookie(domain)
+        cookie_path = (
+            get_cookie_dir() / cookie_data["cookie_file"] if cookie_data else None
+        )
+        if cookie_path is None:
+            if getattr(client, "_deleted", False):
+                return
+            with cookie_table_container:
+                ui.notify(f"Cookie 不存在: {domain}", type="negative")
+            return
+        ok = await verify_cookie(str(cookie_path))
+        if getattr(client, "_deleted", False):
+            return
+        with cookie_table_container:
+            if ok:
+                ui.notify(f"Cookie 验证成功（{domain}），知乎可正常访问", type="positive")
+            else:
+                ui.notify(
+                    f"Cookie 验证失败（{domain}）：可能已失效，请重新从浏览器导出",
+                    type="negative",
+                )
 
     def show_add_dialog() -> None:
         """显示添加 Cookie 对话框"""
@@ -141,6 +216,10 @@ def render(edit_domain: str = "", delete_domain: str = "") -> None:
                         )
                         return
                     ui.notify(f"Cookie 已保存（{domain}）", type="positive")
+                    if _is_zhihu_domain(domain):
+                        background_tasks.create(
+                            _run_cookie_test(domain, ui.context.client)
+                        )
                     dialog.close()
                     ui.navigate.to("/settings")
 
@@ -232,6 +311,10 @@ def render(edit_domain: str = "", delete_domain: str = "") -> None:
                         delete_cookie(original_domain)
 
                     ui.notify(f"Cookie 已更新（{new_domain}）", type="positive")
+                    if _is_zhihu_domain(new_domain):
+                        background_tasks.create(
+                            _run_cookie_test(new_domain, ui.context.client)
+                        )
                     dialog.close()
                     ui.navigate.to("/settings")
 
@@ -241,6 +324,9 @@ def render(edit_domain: str = "", delete_domain: str = "") -> None:
 
     if edit_domain:
         show_modify_dialog(edit_domain)
+
+    if test_domain:
+        background_tasks.create(_run_cookie_test(test_domain, ui.context.client))
 
     def show_delete_confirm_dialog(domain: str) -> None:
         with ui.dialog() as dialog, ui.card().classes("w-80"):

@@ -15,7 +15,10 @@ import asyncio
 import json
 import logging
 import re
+import time
+from http.cookiejar import Cookie as JarCookie
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -28,6 +31,11 @@ from core.ytdlp_handler import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ZhihuAccessError(Exception):
+    """知乎页面访问失败（WAF 403 等），向上层传达 cookie 未配置/已失效信息。"""
+
 
 ZHIHU_ANSWER_PATTERN = re.compile(
     r"https?://(?:www\.)?zhihu\.com/question/\d+/answer/\d+"
@@ -100,6 +108,68 @@ def _parse_cookies(cookie_file: str | None) -> dict[str, str]:
         if name:
             cookies[name] = value
     return cookies
+
+
+def _fallback_domain(url: str) -> str:
+    """从 URL 提取 cookie 回写用的兜底域名（初始 cookie 无 domain 属性时使用）。"""
+    host = (urlparse(url).hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return "." + host if host else ".zhihu.com"
+
+
+def _cookies_to_netscape(cookies: httpx.Cookies, fallback_domain: str) -> str:
+    """把 httpx cookie jar（含服务端 Set-Cookie 刷新）序列化为 Netscape 格式。
+
+    跳过已过期与空值 cookie；会话级 cookie（无 expires）写 0。
+    同名 cookie 可能并存两条（初始注入 + Set-Cookie 刷新，domain key 不同），
+    优先保留服务端下发的条目（domain 带点前缀）。
+    """
+    now = time.time()
+    best: dict[str, JarCookie] = {}
+    for cookie in cookies.jar:
+        if not cookie.name or cookie.value in (None, ""):
+            continue
+        if cookie.expires is not None and cookie.expires < now:
+            continue
+        prev = best.get(cookie.name)
+        if prev is None:
+            best[cookie.name] = cookie
+        elif cookie.domain_initial_dot and not prev.domain_initial_dot:
+            best[cookie.name] = cookie
+
+    lines = ["# Netscape HTTP Cookie File"]
+    for cookie in best.values():
+        domain = cookie.domain or fallback_domain
+        if domain and not domain.startswith("."):
+            domain = "." + domain
+        path = cookie.path or "/"
+        secure = "TRUE" if cookie.secure else "FALSE"
+        expiry = str(int(cookie.expires)) if cookie.expires else "0"
+        lines.append(
+            "\t".join(
+                [domain, "TRUE", path, secure, expiry, cookie.name, cookie.value or ""]
+            )
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _persist_cookie_updates(
+    client: httpx.AsyncClient, cookie_file: str | None, fallback_domain: str
+) -> None:
+    """把 httpx cookie jar（含服务端 Set-Cookie 刷新）写回 Netscape cookie 文件。
+
+    知乎会周期性通过 Set-Cookie 刷新部分 cookie（如 _xsrf / __zse_ck），
+    回写可延长静态导出 cookie 的有效期。失败只记 warning，不影响请求流程。
+    """
+    if not cookie_file:
+        return
+    try:
+        Path(cookie_file).write_text(
+            _cookies_to_netscape(client.cookies, fallback_domain)
+        )
+    except OSError as e:
+        logger.warning("Cookie 回写失败 (%s): %s", cookie_file, e)
 
 
 # =============================================================================
@@ -247,7 +317,12 @@ def _guess_extension_url(url: str) -> str | None:
 async def _fetch_answer_page(
     url: str, cookie_file: str | None = None
 ) -> str:
-    """Fetch Zhihu answer page HTML."""
+    """Fetch Zhihu answer page HTML.
+
+    Raises:
+        ZhihuAccessError: WAF 返回 403 时抛出，消息区分未配置与已失效两种场景。
+        httpx.HTTPStatusError: 其他非 2xx 状态码。
+    """
     httpx_cookies = _parse_cookies(cookie_file) if cookie_file else {}
     async with httpx.AsyncClient(
         timeout=30,
@@ -259,8 +334,49 @@ async def _fetch_answer_page(
         },
     ) as client:
         resp = await client.get(url)
+        if resp.status_code == 403:
+            if cookie_file:
+                raise ZhihuAccessError(
+                    "知乎页面访问失败（403）：Cookie 已失效，"
+                    "请重新从浏览器导出并在 Cookie 设置中更新"
+                )
+            raise ZhihuAccessError(
+                "知乎页面访问失败（403）：未配置知乎 Cookie，请先在 Cookie 设置中配置"
+            )
         resp.raise_for_status()
+        _persist_cookie_updates(client, cookie_file, _fallback_domain(url))
         return resp.text
+
+
+async def verify_cookie(cookie_file: str | None) -> bool:
+    """验证知乎 Cookie 是否有效。
+
+    请求知乎首页，能通过 WAF（返回 200）即视为有效；403 / 网络异常 /
+    未传 cookie 文件 / 文件无可解析 cookie 时返回 False。
+    """
+    if not cookie_file:
+        return False
+    httpx_cookies = _parse_cookies(cookie_file)
+    if not httpx_cookies:
+        return False
+    try:
+        async with httpx.AsyncClient(
+            timeout=30,
+            follow_redirects=True,
+            cookies=httpx_cookies,
+            headers={
+                "User-Agent": _USER_AGENT,
+                "Referer": _ZHIHU_REFERER,
+            },
+        ) as client:
+            resp = await client.get("https://www.zhihu.com/")
+            if resp.status_code == 200:
+                _persist_cookie_updates(
+                    client, cookie_file, _fallback_domain("https://www.zhihu.com/")
+                )
+            return resp.status_code == 200
+    except httpx.HTTPError:
+        return False
 
 
 def _extract_title(html: str, url: str) -> str:

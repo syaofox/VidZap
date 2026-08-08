@@ -14,10 +14,17 @@ GC 可能取消任务（任务引用不保留时），且异常会静默丢失�
 `download_queue.py` 的 `enqueue()` 即用 `asyncio.ensure_future()`（源码注释说明了原因）。
 
 ### background task 中访问 `ui.context.client` 会抛 RuntimeError
-背景协程没有 slot context。必须在 `background_tasks.create()` **之前**捕获引用：
+背景协程没有 slot context（`Slot.stacks` 按 asyncio task 隔离，background task 的 stack 为空）。
+必须在 `background_tasks.create()` **之前**捕获引用：
 `client = ui.context.client`，闭包内用 `getattr(client, "_deleted", False)` 判断页面是否销毁。
 惯例是 I/O 前后各查一次（双守卫），实例见 `home.py` 的 `_load_version`、
 `settings.py` 的 `_load_cookies`、`history.py` 的 `_load_and_rebuild`。
+
+**`ui.notify` 在 background task 内同样不可用**：它内部访问 `context.client`（notify.py），
+slot stack 为空时抛同样的 RuntimeError。需要 notify / 创建 UI 时必须用
+`with container_element:` 显式进入目标 slot 再调用（`Slot.__enter__` 会把自己的 slot 压入
+当前 task 的 stack）。实例：`settings.py` 的 `_run_cookie_test`（background_tasks.create 时
+传入预先捕获的 client，notify 前 `with cookie_table_container:`）。
 
 ### Timer 与已销毁页面
 `ui.timer` 绑定到页面，页面销毁后不会自动停。回调里操作 UI 前必须检查
@@ -71,7 +78,7 @@ HTML 已发送给浏览器之后发生的异常（按钮点击、timer 回调）
 - **YouTube cookie 反爬**：带 cookie 提取可能失败，`_extract_sync` 失败时自动移除 cookie 重试。
 - **批量提取串行化**：批量分析用 `asyncio.Semaphore(1)` 串行执行，避免触发 YouTube 反爬 /
   Douyin 限流。
-- **视频信息超时**：提取统一 `asyncio.wait_for(..., timeout=60)`（分享 API 阶段分析 30s）。
+- **视频信息超时**：`ytdlp_handler.extract_info()` 内部统一 `asyncio.wait_for(..., timeout=60)`（分享 API 阶段分析 30s，main.py 外层 wait_for）。注意：**home.py 的 douyin/zhihu 提取没有外层 wait_for 兜底**，靠 httpx timeout=30 / Playwright page.goto 30s 内部超时，卡死时只能由用户重新点击。
 
 ### Bilibili CDN 封面 Referer 拦截
 `i1.hdslb.com` CDN 检查 `Referer` 头，非 Bilibili 域名（如 `localhost:8080`）返回 403。
@@ -91,6 +98,20 @@ HTML 已发送给浏览器之后发生的异常（按钮点击、timer 回调）
 ### Zhihu（zhihu_answer.py）
 - **WAF 保护（zh-zse-ck）**：zhihu.com 与 zhuanlan.zhihu.com 页面无有效 Cookie 时 httpx 返回 403。
   必须先配置 zhihu.com 的 Cookie：`d_c0` 为关键，`_xsrf` / `z_c0` / `__zse_ck` 一并带上最稳。
+- **Cookie 失效快的原因（踩坑结论）**：① 知乎风控检测"异地 IP + UA 指纹不符 + 无 JS 行为"后快速吊销
+  `z_c0`/`d_c0`（几小时～几天）；② `__zse_ck` 由 zse-96 JS 算法动态计算并与 `d_c0` 绑定，静态导出无法续签；
+  ③ 浏览器导出的会话级 cookie（Netscape expires=0）导出后很快失效。**运维提示：失效快主要是知乎侧机制，
+  只能靠重新导出缓解；项目侧已做检测、提示与 Set-Cookie 回写（见下）。**
+- **Set-Cookie 自动回写**：`_fetch_answer_page()` / `verify_cookie()` 请求成功（2xx）后调用
+  `_persist_cookie_updates()`，把 httpx cookie jar（含服务端刷新）序列化回写 Netscape cookie 文件
+  （`_cookies_to_netscape()`：跳过过期/空值，同名并存时优先保留服务端下发条目）。403 不回写（防误删）。
+  可延长静态 cookie 有效期，但 `__zse_ck` 等需 JS 生成的签名仍会过期。
+- **403 必须抛 `ZhihuAccessError`**：`_fetch_answer_page` 遇 403 抛 `ZhihuAccessError`（消息区分"未配置"与
+  "已失效"两种场景），上层（home.py / main.py share API）捕获后透传提示，禁止吞成笼统的 HTTPStatusError。
+- **`verify_cookie(cookie_file)` 验证入口**：请求知乎首页，200 即有效。设置页保存 zhihu.com Cookie 后自动
+  验证，并支持 `/settings?test=DOMAIN` 链接手动验证。
+- **过期状态展示**：`cookie_manager.parse_cookie_expiry()` / `_expiry_summary()` / `list_cookies_with_expiry()`
+  解析 Netscape 格式 expires 列（0 或非法值视为会话级），设置页表格按行展示"已过期 / 含会话级 / 有效至"。
 - **专栏 SSR 无标题**：zhuanlan 页面 SSR 无 `<title>` / og:title，标题回退"知乎专栏 {id}"；
   `_extract_title` 支持 `/answer/`、`/pin/`、`/p/` 三种回退。
 - **提取优先级**：1) `data-actual` / `data-original` 属性（原图地址） 2)
