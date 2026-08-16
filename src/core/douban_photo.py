@@ -333,9 +333,10 @@ async def extract_douban_photos(
 
 
 def subset_note_info(note_info: dict, indexes: list[int] | set[int]) -> dict:
-    """按索引子集裁剪豆瓣 note_info（供分析页勾选部分图片下载）。
+    """按索引子集裁剪图片类 note_info（豆瓣/知乎分析页勾选部分下载共用）。
 
-    image_urls / detail_urls / thumb_urls 是并行列表，按下标同步裁剪；
+    image_urls / detail_urls / thumb_urls 是并行列表，按下标同步裁剪
+    （detail_urls / thumb_urls 缺失时容错为空，如知乎 note_info）；
     image_count 同步为选中数量；越界索引安全忽略。
     """
     idx_set = set(indexes)
