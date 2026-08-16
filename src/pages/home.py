@@ -1,4 +1,5 @@
 import asyncio
+import re
 from collections.abc import Callable
 from urllib.parse import quote
 
@@ -35,6 +36,26 @@ from core.zhihu_answer import (
 from core.zhihu_answer import (
     extract_zhihu_answer as _extract_zhihu_answer,
 )
+
+_URL_PATTERN = re.compile(r'https?://[^\s\u3000<>"\']+')
+# URL 尾随标点（复制说明文字时常带中文/英文结束标点）
+_URL_TRAILING = "。，、；：！？）》】」』\"'.,;!?)]}#"
+
+
+def extract_urls(text: str | None) -> list[str]:
+    """从文本中提取 URL，支持粘贴带说明文字的内容自动提取。
+
+    按出现顺序去重；过滤尾随中文/英文标点（如"…answer/1944275098866541196。"）。
+    无 URL 时返回空列表。
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw in _URL_PATTERN.findall(text or ""):
+        url = raw.rstrip(_URL_TRAILING)
+        if url and url not in seen:
+            seen.add(url)
+            result.append(url)
+    return result
 
 
 def classify_urls(urls: list[str]) -> str:
@@ -344,7 +365,9 @@ def render() -> None:
         ui.label("输入视频链接").classes("text-h6 mb-2")
 
         # 单个 URL 输入
-        url_input = ui.input("粘贴视频链接").props("outlined clearable").classes("w-full mb-4")
+        url_input = ui.input(
+            "粘贴链接（支持直接粘贴含说明文字的内容，自动提取 URL）"
+        ).props("outlined clearable").classes("w-full mb-4")
 
         # 批量 URL 输入
         batch_toggle = ui.switch("批量下载模式")
@@ -441,14 +464,18 @@ def render() -> None:
             card.classes("hidden")
             card.clear()
         try:
-            urls = []
+            # 自动提取 URL：支持粘贴带说明文字的内容（如"标题 + 链接"）
             if batch_toggle.value and batch_input.value:
-                urls = [u.strip() for u in batch_input.value.split("\n") if u.strip()]
+                urls = extract_urls(batch_input.value)
             elif url_input.value:
-                urls = [url_input.value.strip()]
+                urls = extract_urls(url_input.value)
 
             if not urls:
-                ui.notify("请输入链接", type="warning")
+                ui.notify(
+                    "未识别到有效链接：请粘贴包含 http(s) 链接的内容",
+                    type="warning",
+                    multi_line=True,
+                )
                 return
 
             # 豆瓣安全校验页链接（浏览器未登录/被风控重定向后地址栏的 URL）无法直接下载

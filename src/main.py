@@ -276,6 +276,17 @@ async def share_url(request: Request) -> JSONResponse:
             status_code=422,
         )
 
+    # 自动提取 URL：分享内容可能带说明文字（如"标题 + 链接"）
+    from pages.home import extract_urls
+
+    extracted = extract_urls(url)
+    if not extracted:
+        return JSONResponse(
+            {"status": "error", "message": "未识别到有效链接：请分享包含 http(s) 链接的内容"},
+            status_code=422,
+        )
+    url = extracted[0]
+
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
         return JSONResponse(
