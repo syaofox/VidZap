@@ -534,6 +534,88 @@ class TestResolveOriginalFromDetail:
         assert result is None
 
 
+class TestSubsetNoteInfo:
+    def _note_info(self) -> dict:
+        return {
+            "title": "测试人物的图片",
+            "thumbnail": "https://img1.doubanio.com/view/photo/photo/public/p1.jpg",
+            "image_urls": [
+                "https://img1.doubanio.com/view/photo/xl/public/p1.jpg",
+                "https://img2.doubanio.com/view/photo/xl/public/p2.jpg",
+                "https://img3.doubanio.com/view/photo/xl/public/p3.jpg",
+            ],
+            "detail_urls": [
+                "https://www.douban.com/personage/1/photo/1",
+                "https://www.douban.com/personage/1/photo/2",
+                "https://www.douban.com/personage/1/photo/3",
+            ],
+            "thumb_urls": [
+                "https://img1.doubanio.com/view/photo/photo/public/p1.jpg",
+                "https://img2.doubanio.com/view/photo/photo/public/p2.jpg",
+                "https://img3.doubanio.com/view/photo/photo/public/p3.jpg",
+            ],
+            "image_count": 3,
+        }
+
+    def test_subset_by_indexes(self):
+        """按索引裁剪后三个并行列表与 image_count 同步。"""
+        from core.douban_photo import subset_note_info
+
+        result = subset_note_info(self._note_info(), [0, 2])
+        assert result["image_count"] == 2
+        assert result["image_urls"] == [
+            "https://img1.doubanio.com/view/photo/xl/public/p1.jpg",
+            "https://img3.doubanio.com/view/photo/xl/public/p3.jpg",
+        ]
+        assert result["detail_urls"] == [
+            "https://www.douban.com/personage/1/photo/1",
+            "https://www.douban.com/personage/1/photo/3",
+        ]
+        assert result["thumb_urls"] == [
+            "https://img1.doubanio.com/view/photo/photo/public/p1.jpg",
+            "https://img3.doubanio.com/view/photo/photo/public/p3.jpg",
+        ]
+        assert result["title"] == "测试人物的图片"
+        assert result["thumbnail"] == self._note_info()["thumbnail"]
+
+    def test_subset_all(self):
+        from core.douban_photo import subset_note_info
+
+        result = subset_note_info(self._note_info(), [0, 1, 2])
+        assert result["image_count"] == 3
+        assert len(result["image_urls"]) == 3
+
+    def test_subset_none(self):
+        from core.douban_photo import subset_note_info
+
+        result = subset_note_info(self._note_info(), [])
+        assert result["image_count"] == 0
+        assert result["image_urls"] == []
+
+    def test_subset_ignores_out_of_range(self):
+        """越界索引安全忽略。"""
+        from core.douban_photo import subset_note_info
+
+        result = subset_note_info(self._note_info(), [0, 99])
+        assert result["image_count"] == 1
+        assert len(result["image_urls"]) == 1
+
+    def test_subset_missing_lists(self):
+        """detail_urls / thumb_urls 缺失时容错为空。"""
+        from core.douban_photo import subset_note_info
+
+        note_info = {
+            "title": "x",
+            "thumbnail": "",
+            "image_urls": ["https://img1.doubanio.com/view/photo/xl/public/p1.jpg"],
+            "image_count": 1,
+        }
+        result = subset_note_info(note_info, [0])
+        assert result["image_count"] == 1
+        assert result["detail_urls"] == []
+        assert result["thumb_urls"] == []
+
+
 class TestDownloadDoubanImages:
     def _note_info(self, count: int = 2) -> dict:
         return {

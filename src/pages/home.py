@@ -9,6 +9,7 @@ from core.cookie_manager import get_cookie_for_url
 from core.douban_photo import (
     DoubanAccessError,
     is_douban_photo_url,
+    subset_note_info,
 )
 from core.douban_photo import (
     extract_douban_photos as _extract_douban_photos,
@@ -779,6 +780,10 @@ def render() -> None:
                 format_card.clear()
                 with format_card:
                     ui.label("图片预览").classes("text-h6 mb-2")
+                    ui.label("勾选需要下载的图片（默认全选，可取消勾选）").classes(
+                        "text-caption text-grey mb-2"
+                    )
+                    douban_checkboxes: list[ui.checkbox] = []
                     with ui.row().classes("w-full gap-2 flex-wrap"):
                         preview_urls = (
                             douban_image_info.get("thumb_urls")
@@ -789,27 +794,43 @@ def render() -> None:
                         # 浏览器导航不带 Referer，豆瓣 CDN 会返回 418。
                         detail_urls = douban_image_info.get("detail_urls") or []
                         for idx, img_url in enumerate(preview_urls):
-                            img = ui.image(
-                                f"/douban-image?url={quote(img_url)}"
-                            ).classes(
-                                "w-32 h-32 object-cover rounded cursor-pointer"
-                            )
+                            with ui.column().classes("items-center gap-0"):
+                                img = ui.image(
+                                    f"/douban-image?url={quote(img_url)}"
+                                ).classes(
+                                    "w-32 h-32 object-cover rounded cursor-pointer"
+                                )
 
-                            def _open_douban_img(
-                                u=(
-                                    detail_urls[idx]
-                                    if idx < len(detail_urls)
-                                    else img_url
-                                ),
-                            ):
-                                ui.navigate.to(u, new_tab=True)
+                                def _open_douban_img(
+                                    u=(
+                                        detail_urls[idx]
+                                        if idx < len(detail_urls)
+                                        else img_url
+                                    ),
+                                ):
+                                    ui.navigate.to(u, new_tab=True)
 
-                            img.on("click", _open_douban_img)
+                                img.on("click", _open_douban_img)
+
+                                cb = ui.checkbox(f"{idx + 1}").props(
+                                    "dense size=sm"
+                                )
+                                cb.value = True  # 默认全选
+                                douban_checkboxes.append(cb)
 
                     with ui.row().classes("w-full justify-end mt-4"):
                         db_dl_btn_ref: dict = {"btn": None}
 
                         async def do_douban_download() -> None:
+                            selected_indexes = [
+                                i
+                                for i, cb in enumerate(douban_checkboxes)
+                                if cb.value
+                            ]
+                            if not selected_indexes:
+                                ui.notify("请至少选择一张图片", type="warning")
+                                return
+
                             urls = analysis_result["urls"]
                             new_urls, existing = split_existing_urls(urls)
 
@@ -867,13 +888,21 @@ def render() -> None:
                             db_dl_btn_ref["btn"].disable()
                             await download_douban(
                                 urls_to_download,
+                                selected_indexes=selected_indexes,
                                 on_done=lambda: db_dl_btn_ref["btn"].enable(),
                             )
 
                         db_dl_btn_ref["btn"] = ui.button(
-                            f"下载全部图片 ({douban_image_info['image_count']} 张)",
+                            f"下载选中的图片 ({len(preview_urls)} 张)",
                             on_click=do_douban_download,
                         ).props("color=positive push")
+
+                        def _update_douban_btn() -> None:
+                            cnt = sum(1 for cb in douban_checkboxes if cb.value)
+                            db_dl_btn_ref["btn"].text = f"下载选中的图片 ({cnt} 张)"
+
+                        for cb in douban_checkboxes:
+                            cb.on("update:model-value", _update_douban_btn)
 
                 return
 
@@ -1270,9 +1299,10 @@ def render() -> None:
 
     async def download_douban(
         urls: list[str],
+        selected_indexes: list[int] | None = None,
         on_done: Callable | None = None,
     ) -> None:
-        """下载豆瓣人物的全部图片"""
+        """下载豆瓣人物的图片（可只下载分析页勾选的子集）"""
         if not urls:
             return
 
@@ -1282,6 +1312,16 @@ def render() -> None:
         for url in urls:
             cookie = get_cookie_for_url(url)
             note_info_for_url = urls_info.get(url)
+            # 分析页勾选子集：仅对展示过的 URL（即首个 URL）裁剪 note_info；
+            # 批量模式中其他 URL 无预览数据，下载全量
+            if (
+                note_info_for_url is not None
+                and selected_indexes
+                and url == urls[0]
+            ):
+                note_info_for_url = subset_note_info(
+                    note_info_for_url, selected_indexes
+                )
             title = (
                 note_info_for_url.get("title", "Unknown")
                 if note_info_for_url

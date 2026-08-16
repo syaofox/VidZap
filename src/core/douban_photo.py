@@ -332,6 +332,34 @@ async def extract_douban_photos(
     }
 
 
+def subset_note_info(note_info: dict, indexes: list[int] | set[int]) -> dict:
+    """按索引子集裁剪豆瓣 note_info（供分析页勾选部分图片下载）。
+
+    image_urls / detail_urls / thumb_urls 是并行列表，按下标同步裁剪；
+    image_count 同步为选中数量；越界索引安全忽略。
+    """
+    idx_set = set(indexes)
+    image_urls = [
+        u for i, u in enumerate(note_info["image_urls"]) if i in idx_set
+    ]
+    return {
+        "title": note_info["title"],
+        "thumbnail": note_info.get("thumbnail", ""),
+        "image_urls": image_urls,
+        "detail_urls": [
+            u
+            for i, u in enumerate(note_info.get("detail_urls") or [])
+            if i in idx_set
+        ],
+        "thumb_urls": [
+            u
+            for i, u in enumerate(note_info.get("thumb_urls") or [])
+            if i in idx_set
+        ],
+        "image_count": len(image_urls),
+    }
+
+
 async def _resolve_original_from_detail(
     detail_url: str, cookie_file: str | None
 ) -> str | None:
