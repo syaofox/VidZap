@@ -88,6 +88,7 @@ uv lock                     # pyproject.toml 变动后必须执行，pyproject.t
 - `PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright`；持久化卷：`downloads/`、`data/`。
 - `docker-compose.yml` 固定 `mem_limit: 2g` + `cpus: "4"`（Chromium 峰值 800MB + ffmpeg 易超 1G），勿移除或大幅调高。
 - 修改 `Dockerfile` / `.dockerignore` 后执行 `docker compose build --no-cache` 全量验证。
+- **新增源码文件必须 644 权限（other 可读）**：构建上下文保留源文件权限位，若新文件是 600（如部分代码生成工具产物），容器内 nicevid（uid=1000）读取会报 `PermissionError`（实例：douban_photo.py）。`COPY --chown=nicevid:nicevid src/ src/` 已保证属主，但权限位仍需 644；提交前 `find src tests -type f ! -perm 644` 排查。
 
 ### Android 分享 API（`POST /api/share`，main.py）
 

@@ -50,7 +50,8 @@ RUN mkdir -p downloads data && \
     chown -R nicevid:nicevid downloads data
 
 # Application source (changes most frequently — comes last for caching)
-COPY src/ src/
+# --chown 保证源码归 nicevid 所有，避免源文件权限位导致运行用户不可读
+COPY --chown=nicevid:nicevid src/ src/
 
 EXPOSE 8080
 
