@@ -6,6 +6,86 @@ from core.ytdlp_handler import create_download_record, delete_download_record
 from pages.home import classify_urls, extract_urls, split_existing_urls
 
 
+class TestReadEventModifiers:
+    @staticmethod
+    def _read(args):
+        from pages.home import _read_event_modifiers
+
+        class E:
+            def __init__(self, args):
+                self.args = args
+
+        return _read_event_modifiers(E(args))
+
+    def test_dict_args(self):
+        assert self._read({"shiftKey": True, "ctrlKey": False}) == (True, False)
+        assert self._read({"shiftKey": False, "ctrlKey": True}) == (False, True)
+        assert self._read({"shiftKey": False, "ctrlKey": False}) == (False, False)
+
+    def test_sequence_args(self):
+        """兼容 e.args 为值序列的情况。"""
+        assert self._read([True, False]) == (True, False)
+        assert self._read([False, True]) == (False, True)
+
+    def test_missing_or_short(self):
+        assert self._read(None) == (False, False)
+        assert self._read({}) == (False, False)
+        assert self._read([True]) == (False, False)
+
+
+class TestApplySelectionAction:
+    @staticmethod
+    def _apply(state, anchor, idx, shift):
+        from pages.home import _apply_selection_action
+        return _apply_selection_action(state, anchor, idx, shift)
+
+    def test_toggle_single(self):
+        state = [True, True, True]
+        new_state, anchor = self._apply(state, 0, 1, shift=False)
+        assert new_state == [True, False, True]
+        assert anchor == 1
+
+    def test_toggle_back(self):
+        state = [True, False, True]
+        new_state, anchor = self._apply(state, 1, 1, shift=False)
+        assert new_state == [True, True, True]
+        assert anchor == 1
+
+    def test_shift_range_from_selected_anchor(self):
+        """锚点选中时 Shift 范围全部选中，且锚点不移动。"""
+        state = [True, False, False, True]
+        new_state, anchor = self._apply(state, 0, 2, shift=True)
+        assert new_state == [True, True, True, True]
+        assert anchor == 0
+
+    def test_shift_range_from_unselected_anchor(self):
+        """锚点未选中时 Shift 范围全部取消。"""
+        state = [True, False, False, True]
+        new_state, anchor = self._apply(state, 1, 3, shift=True)
+        assert new_state == [True, False, False, False]
+        assert anchor == 1
+
+    def test_shift_reversed_range(self):
+        """锚点大于点击索引（反向范围）同样成立。"""
+        state = [False, False, True, True]
+        new_state, anchor = self._apply(state, 3, 1, shift=True)
+        assert new_state == [False, True, True, True]
+        assert anchor == 3
+
+    def test_shift_single_index_is_anchor(self):
+        """Shift 点击锚点自身：状态不变。"""
+        state = [True, False, True]
+        new_state, anchor = self._apply(state, 1, 1, shift=True)
+        assert new_state == state
+        assert anchor == 1
+
+    def test_original_state_untouched(self):
+        """函数不应修改传入的 state（返回新列表）。"""
+        state = [True, False]
+        self._apply(state, 0, 1, shift=False)
+        assert state == [True, False]
+
+
 class TestExtractUrls:
     @pytest.mark.parametrize(
         ("text", "expected"),
