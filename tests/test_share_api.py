@@ -298,6 +298,9 @@ class TestDoubanImageProxy:
 
     def setup_method(self) -> None:
         init_db()
+        import main
+
+        main._douban_image_cache.clear()  # 隔离模块级缓存
 
     @pytest.mark.asyncio
     async def test_proxy_success(self):

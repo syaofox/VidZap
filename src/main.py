@@ -3,6 +3,7 @@ import logging
 import mimetypes
 import os
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -57,18 +58,31 @@ def serve_download_file(download_id: int, filename: str):
     )
 
 
+# 豆瓣图片代理缓存：url -> (时间戳, 内容, media_type)；图片多时避免重复代抓
+_douban_image_cache: dict[str, tuple[float, bytes, str]] = {}
+_DOUBAN_IMAGE_CACHE_TTL = 300  # 5 分钟
+_DOUBAN_IMAGE_CACHE_MAX = 300  # 最多缓存 300 张（约 20MB 缩略图）
+
+
 @app.get("/douban-image")
 async def douban_image(url: str):
     """代理豆瓣图片（预览用）。
 
     豆瓣 CDN（img*.doubanio.com）只接受 douban.com / doubanio.com 来源的
     Referer，本地部署的浏览器页面无法伪造，故由服务端带 Referer 代抓后返回。
+    内存缓存（TTL + 条数上限）避免图片多时重复代抓。
 
     仅允许 doubanio.com 域名，防止 SSRF。
     """
     host = (urlparse(url).hostname or "").lower()
     if not host.endswith("doubanio.com"):
         return {"error": "仅允许 doubanio.com 图片 URL"}, 400
+
+    now = time.time()
+    cached = _douban_image_cache.get(url)
+    if cached and now - cached[0] < _DOUBAN_IMAGE_CACHE_TTL:
+        return Response(content=cached[1], media_type=cached[2])
+
     try:
         async with httpx.AsyncClient(
             timeout=30,
@@ -87,10 +101,14 @@ async def douban_image(url: str):
         return {"error": "图片获取失败"}, 502
     if resp.status_code != 200:
         return {"error": "图片获取失败"}, resp.status_code
-    return Response(
-        content=resp.content,
-        media_type=resp.headers.get("content-type", "image/jpeg"),
-    )
+
+    media_type = resp.headers.get("content-type", "image/jpeg")
+    _douban_image_cache[url] = (now, resp.content, media_type)
+    # 条数上限：超限移除最早缓存（dict 保持插入序）
+    while len(_douban_image_cache) > _DOUBAN_IMAGE_CACHE_MAX:
+        _douban_image_cache.pop(next(iter(_douban_image_cache)))
+
+    return Response(content=resp.content, media_type=media_type)
 
 
 # =============================================================================

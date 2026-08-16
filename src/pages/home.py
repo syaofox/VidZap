@@ -715,71 +715,123 @@ def render() -> None:
                     ui.label(
                         "点击图片选择/取消（Ctrl+点击切换，Shift+点击范围选择；双击打开原图）"
                     ).classes("text-caption text-grey mb-2")
-                    zhihu_checkboxes: list[ui.checkbox] = []
-                    zhihu_imgs: list = []
+
+                    zhihu_urls = zhihu_image_info["image_urls"]
+                    zhihu_total_count = len(zhihu_urls)
+                    zhihu_page_size = 20
+
+                    # 全量选择状态与锚点（跨页保持）；checkbox/img 仅渲染当前页
+                    zhihu_selected: list[bool] = [True] * zhihu_total_count
                     zhihu_anchor: dict = {"idx": 0}
-                    with ui.row().classes("w-full gap-2 flex-wrap"):
-                        for idx, img_url in enumerate(zhihu_image_info["image_urls"]):
-                            with ui.column().classes("items-center gap-0"):
-                                img = ui.image(img_url).classes(
-                                    "w-32 h-32 object-cover rounded cursor-pointer"
-                                )
-                                zhihu_imgs.append(img)
-
-                                def _open_img(u=img_url):
-                                    ui.navigate.to(u, new_tab=True)
-
-                                def _make_zhihu_click(i=idx):
-                                    def handler(e) -> None:
-                                        shift, ctrl = _read_event_modifiers(e)
-                                        state = [
-                                            cb.value for cb in zhihu_checkboxes
-                                        ]
-                                        new_state, new_anchor = _apply_selection_action(
-                                            state,
-                                            zhihu_anchor["idx"],
-                                            i,
-                                            shift,
-                                        )
-                                        for k, cb in enumerate(zhihu_checkboxes):
-                                            cb.value = new_state[k]
-                                        zhihu_anchor["idx"] = new_anchor
-                                        _sync_zhihu_ui()
-
-                                    return handler
-
-                                # 单击：选中/取消选中（Ctrl+点击同样切换）；
-                                # 双击：打开原图
-                                img.on(
-                                    "click",
-                                    _make_zhihu_click(),
-                                    args=["shiftKey", "ctrlKey"],
-                                )
-                                img.on("dblclick", _open_img)
-
-                                cb = ui.checkbox(f"{idx + 1}").props(
-                                    "dense size=sm"
-                                )
-                                cb.value = True  # 默认全选
-                                zhihu_checkboxes.append(cb)
+                    zhihu_page_ref: dict = {"page": 0}
+                    zhihu_checkboxes: list[ui.checkbox] = []
+                    zhihu_imgs: dict[int, ui.element] = {}
 
                     def _sync_zhihu_ui() -> None:
-                        """同步图片视觉（未选中半透明）与下载按钮计数。"""
-                        for i, cb in enumerate(zhihu_checkboxes):
-                            if cb.value:
-                                zhihu_imgs[i].classes(remove="opacity-40")
+                        """同步当前页图片视觉（未选中半透明）与下载按钮计数。"""
+                        for i, img in zhihu_imgs.items():
+                            if zhihu_selected[i]:
+                                img.classes(remove="opacity-40")
                             else:
-                                zhihu_imgs[i].classes(add="opacity-40")
+                                img.classes(add="opacity-40")
                         _update_zhihu_btn()
+
+                    def _make_zhihu_cb_change(i: int):
+                        def handler(e) -> None:
+                            zhihu_selected[i] = bool(e.args)
+                            _sync_zhihu_ui()
+
+                        return handler
+
+                    def _bind_zhihu_cbs() -> None:
+                        for idx, cb in enumerate(zhihu_checkboxes):
+                            cb.on("update:model-value", _make_zhihu_cb_change(idx))
+
+                    @ui.refreshable
+                    def render_zhihu_page() -> None:
+                        zhihu_checkboxes.clear()
+                        zhihu_imgs.clear()
+                        start = zhihu_page_ref["page"] * zhihu_page_size
+                        end = min(start + zhihu_page_size, zhihu_total_count)
+                        with ui.row().classes("w-full gap-2 flex-wrap"):
+                            for idx in range(start, end):
+                                with ui.column().classes("items-center gap-0"):
+                                    img = ui.image(zhihu_urls[idx]).classes(
+                                        "w-32 h-32 object-cover rounded cursor-pointer"
+                                    )
+                                    if not zhihu_selected[idx]:
+                                        img.classes(add="opacity-40")
+                                    zhihu_imgs[idx] = img
+
+                                    def _open_img(u=zhihu_urls[idx]):
+                                        ui.navigate.to(u, new_tab=True)
+
+                                    def _make_zhihu_click(i=idx):
+                                        def handler(e) -> None:
+                                            shift, _ctrl = _read_event_modifiers(e)
+                                            new_state, new_anchor = (
+                                                _apply_selection_action(
+                                                    zhihu_selected,
+                                                    zhihu_anchor["idx"],
+                                                    i,
+                                                    shift,
+                                                )
+                                            )
+                                            zhihu_selected[:] = new_state
+                                            zhihu_anchor["idx"] = new_anchor
+                                            _sync_zhihu_ui()
+
+                                        return handler
+
+                                    # 单击：选中/取消选中（Ctrl+点击同样切换）；
+                                    # 双击：打开原图
+                                    img.on(
+                                        "click",
+                                        _make_zhihu_click(),
+                                        args=["shiftKey", "ctrlKey"],
+                                    )
+                                    img.on("dblclick", _open_img)
+
+                                    cb = ui.checkbox(f"{idx + 1}").props(
+                                        "dense size=sm"
+                                    )
+                                    cb.value = zhihu_selected[idx]  # 展示状态
+                                    zhihu_checkboxes.append(cb)
+
+                    render_zhihu_page()
+                    _bind_zhihu_cbs()
+
+                    # 分页控件
+                    zhihu_total_pages = max(
+                        1,
+                        (zhihu_total_count + zhihu_page_size - 1) // zhihu_page_size,
+                    )
+
+                    def _change_zhihu_page(delta: int) -> None:
+                        zhihu_page_ref["page"] = (
+                            zhihu_page_ref["page"] + delta
+                        ) % zhihu_total_pages
+                        zhihu_page_label.text = (
+                            f"{zhihu_page_ref['page'] + 1}/{zhihu_total_pages}"
+                        )
+                        render_zhihu_page.refresh()
+                        _bind_zhihu_cbs()
+
+                    with ui.row().classes("w-full items-center justify-center gap-2"):
+                        ui.button(
+                            "上一页", on_click=lambda: _change_zhihu_page(-1)
+                        ).props("dense flat")
+                        zhihu_page_label = ui.label(f"1/{zhihu_total_pages}")
+                        ui.button(
+                            "下一页", on_click=lambda: _change_zhihu_page(1)
+                        ).props("dense flat")
 
                     with ui.row().classes("w-full justify-end mt-4"):
                         zh_dl_btn_ref: dict = {"btn": None}
 
                         async def do_zhihu_download() -> None:
                             selected_indexes = [
-                                i
-                                for i, cb in enumerate(zhihu_checkboxes)
-                                if cb.value
+                                i for i, v in enumerate(zhihu_selected) if v
                             ]
                             if not selected_indexes:
                                 ui.notify("请至少选择一张图片", type="warning")
@@ -852,11 +904,8 @@ def render() -> None:
                         ).props("color=positive push")
 
                         def _update_zhihu_btn() -> None:
-                            cnt = sum(1 for cb in zhihu_checkboxes if cb.value)
+                            cnt = sum(1 for v in zhihu_selected if v)
                             zh_dl_btn_ref["btn"].text = f"下载选中的图片 ({cnt} 张)"
-
-                        for cb in zhihu_checkboxes:
-                            cb.on("update:model-value", _sync_zhihu_ui)
 
                 return
 
@@ -912,87 +961,139 @@ def render() -> None:
                     ui.label(
                         "点击图片选择/取消（Ctrl+点击切换，Shift+点击范围选择；双击打开单页）"
                     ).classes("text-caption text-grey mb-2")
-                    douban_checkboxes: list[ui.checkbox] = []
-                    douban_imgs: list = []
+
+                    preview_urls = (
+                        douban_image_info.get("thumb_urls")
+                        or douban_image_info["image_urls"]
+                    )
+                    # 双击打开豆瓣照片单页（页面内有"查看大图"按钮）。
+                    # 不能直接打开 xl 原图 URL：页面全局 no-referrer 策略下
+                    # 浏览器导航不带 Referer，豆瓣 CDN 会返回 418。
+                    detail_urls = douban_image_info.get("detail_urls") or []
+                    douban_total_count = len(preview_urls)
+                    douban_page_size = 20
+
+                    # 全量选择状态与锚点（跨页保持）；checkbox/img 仅渲染当前页，
+                    # 避免图片过多时 DOM 节点与并发代理请求导致页面卡顿/刷新
+                    douban_selected: list[bool] = [True] * douban_total_count
                     douban_anchor: dict = {"idx": 0}
-                    with ui.row().classes("w-full gap-2 flex-wrap"):
-                        preview_urls = (
-                            douban_image_info.get("thumb_urls")
-                            or douban_image_info["image_urls"]
-                        )
-                        # 双击打开豆瓣照片单页（页面内有"查看大图"按钮）。
-                        # 不能直接打开 xl 原图 URL：页面全局 no-referrer 策略下
-                        # 浏览器导航不带 Referer，豆瓣 CDN 会返回 418。
-                        detail_urls = douban_image_info.get("detail_urls") or []
-                        for idx, img_url in enumerate(preview_urls):
-                            with ui.column().classes("items-center gap-0"):
-                                img = ui.image(
-                                    f"/douban-image?url={quote(img_url)}"
-                                ).classes(
-                                    "w-32 h-32 object-cover rounded cursor-pointer"
-                                )
-                                douban_imgs.append(img)
-
-                                def _open_douban_img(
-                                    u=(
-                                        detail_urls[idx]
-                                        if idx < len(detail_urls)
-                                        else img_url
-                                    ),
-                                ):
-                                    ui.navigate.to(u, new_tab=True)
-
-                                def _make_douban_click(i=idx):
-                                    def handler(e) -> None:
-                                        shift, ctrl = _read_event_modifiers(e)
-                                        state = [
-                                            cb.value for cb in douban_checkboxes
-                                        ]
-                                        new_state, new_anchor = _apply_selection_action(
-                                            state,
-                                            douban_anchor["idx"],
-                                            i,
-                                            shift,
-                                        )
-                                        for k, cb in enumerate(douban_checkboxes):
-                                            cb.value = new_state[k]
-                                        douban_anchor["idx"] = new_anchor
-                                        _sync_douban_ui()
-
-                                    return handler
-
-                                # 单击：选中/取消选中（Ctrl+点击同样切换）；
-                                # 双击：打开豆瓣照片单页
-                                img.on(
-                                    "click",
-                                    _make_douban_click(),
-                                    args=["shiftKey", "ctrlKey"],
-                                )
-                                img.on("dblclick", _open_douban_img)
-
-                                cb = ui.checkbox(f"{idx + 1}").props(
-                                    "dense size=sm"
-                                )
-                                cb.value = True  # 默认全选
-                                douban_checkboxes.append(cb)
+                    douban_page_ref: dict = {"page": 0}
+                    douban_checkboxes: list[ui.checkbox] = []
+                    douban_imgs: dict[int, ui.element] = {}
 
                     def _sync_douban_ui() -> None:
-                        """同步图片视觉（未选中半透明）与下载按钮计数。"""
-                        for i, cb in enumerate(douban_checkboxes):
-                            if cb.value:
-                                douban_imgs[i].classes(remove="opacity-40")
+                        """同步当前页图片视觉（未选中半透明）与下载按钮计数。"""
+                        for i, img in douban_imgs.items():
+                            if douban_selected[i]:
+                                img.classes(remove="opacity-40")
                             else:
-                                douban_imgs[i].classes(add="opacity-40")
+                                img.classes(add="opacity-40")
                         _update_douban_btn()
+
+                    def _make_douban_cb_change(i: int):
+                        def handler(e) -> None:
+                            douban_selected[i] = bool(e.args)
+                            _sync_douban_ui()
+
+                        return handler
+
+                    def _bind_douban_cbs() -> None:
+                        for idx, cb in enumerate(douban_checkboxes):
+                            cb.on("update:model-value", _make_douban_cb_change(idx))
+
+                    @ui.refreshable
+                    def render_douban_page() -> None:
+                        douban_checkboxes.clear()
+                        douban_imgs.clear()
+                        start = douban_page_ref["page"] * douban_page_size
+                        end = min(start + douban_page_size, douban_total_count)
+                        with ui.row().classes("w-full gap-2 flex-wrap"):
+                            for idx in range(start, end):
+                                with ui.column().classes("items-center gap-0"):
+                                    img = ui.image(
+                                        f"/douban-image?url={quote(preview_urls[idx])}"
+                                    ).classes(
+                                        "w-32 h-32 object-cover rounded cursor-pointer"
+                                    )
+                                    if not douban_selected[idx]:
+                                        img.classes(add="opacity-40")
+                                    douban_imgs[idx] = img
+
+                                    def _open_douban_img(
+                                        u=(
+                                            detail_urls[idx]
+                                            if idx < len(detail_urls)
+                                            else preview_urls[idx]
+                                        ),
+                                    ):
+                                        ui.navigate.to(u, new_tab=True)
+
+                                    def _make_douban_click(i=idx):
+                                        def handler(e) -> None:
+                                            shift, _ctrl = _read_event_modifiers(e)
+                                            new_state, new_anchor = (
+                                                _apply_selection_action(
+                                                    douban_selected,
+                                                    douban_anchor["idx"],
+                                                    i,
+                                                    shift,
+                                                )
+                                            )
+                                            douban_selected[:] = new_state
+                                            douban_anchor["idx"] = new_anchor
+                                            _sync_douban_ui()
+
+                                        return handler
+
+                                    # 单击：选中/取消选中（Ctrl+点击同样切换）；
+                                    # 双击：打开豆瓣照片单页
+                                    img.on(
+                                        "click",
+                                        _make_douban_click(),
+                                        args=["shiftKey", "ctrlKey"],
+                                    )
+                                    img.on("dblclick", _open_douban_img)
+
+                                    cb = ui.checkbox(f"{idx + 1}").props(
+                                        "dense size=sm"
+                                    )
+                                    cb.value = douban_selected[idx]  # 展示状态
+                                    douban_checkboxes.append(cb)
+
+                    render_douban_page()
+                    _bind_douban_cbs()
+
+                    # 分页控件
+                    douban_total_pages = max(
+                        1,
+                        (douban_total_count + douban_page_size - 1) // douban_page_size,
+                    )
+
+                    def _change_douban_page(delta: int) -> None:
+                        douban_page_ref["page"] = (
+                            douban_page_ref["page"] + delta
+                        ) % douban_total_pages
+                        douban_page_label.text = (
+                            f"{douban_page_ref['page'] + 1}/{douban_total_pages}"
+                        )
+                        render_douban_page.refresh()
+                        _bind_douban_cbs()
+
+                    with ui.row().classes("w-full items-center justify-center gap-2"):
+                        ui.button(
+                            "上一页", on_click=lambda: _change_douban_page(-1)
+                        ).props("dense flat")
+                        douban_page_label = ui.label(f"1/{douban_total_pages}")
+                        ui.button(
+                            "下一页", on_click=lambda: _change_douban_page(1)
+                        ).props("dense flat")
 
                     with ui.row().classes("w-full justify-end mt-4"):
                         db_dl_btn_ref: dict = {"btn": None}
 
                         async def do_douban_download() -> None:
                             selected_indexes = [
-                                i
-                                for i, cb in enumerate(douban_checkboxes)
-                                if cb.value
+                                i for i, v in enumerate(douban_selected) if v
                             ]
                             if not selected_indexes:
                                 ui.notify("请至少选择一张图片", type="warning")
@@ -1065,11 +1166,8 @@ def render() -> None:
                         ).props("color=positive push")
 
                         def _update_douban_btn() -> None:
-                            cnt = sum(1 for cb in douban_checkboxes if cb.value)
+                            cnt = sum(1 for v in douban_selected if v)
                             db_dl_btn_ref["btn"].text = f"下载选中的图片 ({cnt} 张)"
-
-                        for cb in douban_checkboxes:
-                            cb.on("update:model-value", _sync_douban_ui)
 
                 return
 
