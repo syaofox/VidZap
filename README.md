@@ -7,6 +7,8 @@
 - **视频分析**：输入链接自动识别视频信息（标题、封面、时长、格式列表）
 - **智能格式推荐**：按分辨率自动分组，推荐最佳音视频合并格式
 - **抖音图文笔记下载**：[Playwright](https://playwright.dev) 提取，支持 Cookie 注入
+- **知乎图片下载**：回答 / 想法 / 专栏图片提取（httpx 直连，需配置 zhihu.com Cookie）
+- **豆瓣人物图片下载**：人物照片列表（含分页）原图下载（需配置 douban.com Cookie）
 - **批量下载**：多个链接同时分析并逐一下载
 - **Cookie 管理**：按域名管理 Cookie，支持登录态下载
 - **封面/字幕**：一键勾选下载视频封面和字幕
@@ -64,6 +66,8 @@ src/
     ytdlp_handler.py   # yt-dlp 封装：信息提取、下载、降级重试、格式处理
     cookie_manager.py  # Cookie 文件与数据库管理
     douyin_note.py     # 抖音图文笔记下载（httpx + Playwright 回退）
+    zhihu_answer.py    # 知乎回答/想法/专栏图片提取与下载
+    douban_photo.py    # 豆瓣人物图片提取与下载
     browser_extractor.py # Playwright 浏览器提取引擎
     download_queue.py  # 异步下载队列（同源串行、跨源并行）
     version.py         # 从 pyproject.toml 读取版本号
@@ -97,7 +101,7 @@ make android-install   # 编译后通过 adb 安装到已连接的设备
 
 ## 下载路径
 
-视频保存在 `downloads/<extractor>/<视频标题>/` 目录下；抖音图文在 `downloads/douyin/note_<id>_<标题>/`，知乎图片在 `downloads/zhihu/<kind>_<id>_<标题>/`。
+视频保存在 `downloads/<extractor>/<视频标题>/` 目录下；抖音图文在 `downloads/douyin/note_<id>_<标题>/`，知乎图片在 `downloads/zhihu/<kind>_<id>_<标题>/`，豆瓣人物图片在 `downloads/douban/personage_<pid>_<标题>/`。
 
 ## License
 

@@ -49,6 +49,28 @@ class TestClassifyUrls:
                 "zhihu_answer",
             ),
             (
+                ["https://www.douban.com/personage/27499516/photos/"],
+                "douban_photo",
+            ),
+            (
+                [
+                    "https://www.douban.com/personage/27499516/photos/",
+                    "https://www.douban.com/personage/123456/photos",
+                ],
+                "douban_photo",
+            ),
+            (
+                ["https://www.douban.com/personage/27499516/"],
+                "douban_photo",
+            ),
+            (
+                [
+                    "https://www.douban.com/personage/27499516/",
+                    "https://www.douban.com/personage/123456/photos",
+                ],
+                "douban_photo",
+            ),
+            (
                 [
                     "https://www.youtube.com/watch?v=abc",
                     "https://zhuanlan.zhihu.com/p/123",
@@ -66,6 +88,20 @@ class TestClassifyUrls:
                 [
                     "https://www.youtube.com/watch?v=abc",
                     "https://www.douyin.com/note/123",
+                ],
+                "mixed",
+            ),
+            (
+                [
+                    "https://www.youtube.com/watch?v=abc",
+                    "https://www.douban.com/personage/27499516/photos/",
+                ],
+                "mixed",
+            ),
+            (
+                [
+                    "https://www.douban.com/personage/27499516/photos/",
+                    "https://www.zhihu.com/question/1/answer/2",
                 ],
                 "mixed",
             ),

@@ -121,6 +121,39 @@ HTML 已发送给浏览器之后发生的异常（按钮点击、timer 回调）
   同一张图跨 CDN 子域名 / 扩展名出现时，用 `v2-{hash}` 去重。
 - **视频已放弃**：yt-dlp 不支持 answer URL 格式（只支持 zvideo/{id}），静态 HTML 无法可靠提取视频。
 
+### 豆瓣人物图片（douban_photo.py）
+- **列表页必须带 Cookie**：`douban.com/personage/{pid}/photos/` 无 Cookie 时 302 跳转
+  `sec.douban.com` 安全校验页（`follow_redirects=True` 后最终 URL 变为 sec 域名）。
+  `_fetch_page` 检测 `str(resp.url)` 含 `sec.douban.com` 或直接 403/418 时抛
+  `DoubanAccessError`（区分"未配置/已失效"），禁止吞成笼统 HTTPStatusError。
+- **CDN 只接受豆瓣来源 Referer（踩坑结论）**：`img*.doubanio.com` 对无 Referer **或非
+  douban.com/doubanio.com 来源**的请求一律 418（防盗链收紧，早期实测跨站 Referer 可过，现已拒绝）。
+  httpx 下载统一带 `Referer: https://www.douban.com/`。**浏览器预览无法伪造豆瓣 Referer**
+  （页面 URL 必被拒，referrerpolicy 属性也无济于事），因此新增应用内代理 `GET /douban-image?url=...`
+  （main.py）：服务端带豆瓣 Referer 代抓后返回图片，SSRF 防护仅放行 doubanio.com 域名；
+  home.py 分析页缩略图/预览网格与 history.py 缩略图对 doubanio 图片一律走该代理。
+- **原图 = 缩略图路径变换**：列表页缩略图 `/view/photo/photo/public/p{id}.jpg` → 原图
+  `/view/photo/xl/public/p{id}.jpg`，等价单页"查看大图"（photo-zoom）链接但无需签名参数、
+  无需 Cookie。实测 67/67 张全部可用，避免 N+1 逐张抓单页。
+- **单页兜底**：xl 下载 4xx 时抓 `.../photo/{id}` 单页解析 `photo-zoom` href（含 `&amp;`
+  需 `html.unescape`）重试一次，防御未来结构变化。
+- **预览与全局 no-referrer 冲突**：home.py 全局 `<meta name="referrer" content="no-referrer">`
+  （Bilibili 需要）会让豆瓣缩略图 418。解决：豆瓣 img 单独加 `referrerpolicy="unsafe-url"`
+  （Quasar QImg 支持该 prop，可覆盖文档级策略）；预览点击打开豆瓣**单页**而非直开 xl
+  （浏览器导航同样不带 Referer，直开 xl 会 418）。
+- **`verify_cookie` 用 `/mine/`**：豆瓣首页公开无需登录（200 无法区分），`/mine/`（我的豆瓣）
+  无 Cookie 403、有 Cookie 200 且 302 到 `/people/{uid}/`，以此为准。
+- **分页结构**：每页 30 张，分页器 `(共N张)` 总张数 + `?start={n}&sortby={sortby}`；
+  提取循环按 total 截止 + 页容量 + photo_id 去重。
+- **反爬风控（踩坑结论）**：连续高频请求（如 67 张 xl 批量下载 / 反复分析）会触发机器人检测，
+  302 到 `https://www.douban.com/misc/sorry?original-url=...`（腾讯云验证码 TCaptcha，HTTP 200）。
+  症状是提取**静默返回 0 张**（页面 200 但内容为验证码 HTML）。修复：① `_fetch_page` 检测
+  URL 含 `misc/sorry` 或 HTML 含 `turing.captcha` 时抛 `DoubanAccessError`（提示稍后再试）；
+  ② 下载循环与分页间加 `_REQUEST_DELAY=0.3s` 节流。风控按 IP 持续一段时间，提示用户等待。
+- **主页与列表页都支持**：用户常直接粘贴人物主页 `/personage/{pid}/`（而非 /photos/），
+  `is_douban_photo_url()` 两者都识别，提取统一走列表页。浏览器未登录时地址栏会变成
+  `sec.douban.com/c?...` 校验 URL——home.py / share API 对该 URL 直接拦截提示。
+
 ## Docker 构建经验
 
 - **两阶段构建**：builder 装依赖 → final 复制 `.venv` + 源码 + Playwright。依赖不变时，

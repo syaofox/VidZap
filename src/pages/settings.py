@@ -18,6 +18,11 @@ def _is_zhihu_domain(domain: str) -> bool:
     return domain == "zhihu.com" or domain.endswith(".zhihu.com")
 
 
+def _is_douban_domain(domain: str) -> bool:
+    """douban.com 及其子域（www.douban.com 等）。"""
+    return domain == "douban.com" or domain.endswith(".douban.com")
+
+
 def _expiry_display(expiry: dict) -> tuple[str, str]:
     """返回 (显示文本, 颜色 class)（供表格过期状态列使用）。"""
     status = expiry.get("status")
@@ -93,9 +98,11 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
                         style="white-space: nowrap; padding: 0 4px 0 0; text-align: right;">
                         <a :href="'/settings?test=' + encodeURIComponent(props.row.domain)"
                            v-if="props.row.domain === 'zhihu.com' ||
-                                 props.row.domain.endsWith('.zhihu.com')"
+                                 props.row.domain.endsWith('.zhihu.com') ||
+                                 props.row.domain === 'douban.com' ||
+                                 props.row.domain.endsWith('.douban.com')"
                            class="text-primary q-ml-xs" style="text-decoration: none;"
-                           title="验证知乎 Cookie 是否有效">
+                           title="验证 Cookie 是否有效">
                             <q-icon name="verified_user" size="xs"></q-icon>
                         </a>
                         <a :href="'/settings?edit=' + encodeURIComponent(props.row.domain)"
@@ -120,13 +127,20 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
         background_tasks.create(_load_cookies())
 
     async def _run_cookie_test(domain: str, client: Client) -> None:
-        """验证指定域名的知乎 Cookie 并提示结果。
+        """验证指定域名的知乎/豆瓣 Cookie 并提示结果。
 
         client 必须由调用方在创建 background task 之前捕获：
         background task 内无 slot context（ui.context.client 会抛 RuntimeError），
         需用 `with cookie_table_container:` 显式进入 slot 才能 notify。
         """
-        from core.zhihu_answer import verify_cookie
+        if _is_douban_domain(domain):
+            from core.douban_photo import verify_cookie as verify_fn
+
+            site_name = "豆瓣"
+        else:
+            from core.zhihu_answer import verify_cookie as verify_fn
+
+            site_name = "知乎"
 
         cookie_data = get_cookie(domain)
         cookie_path = (
@@ -138,12 +152,15 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
             with cookie_table_container:
                 ui.notify(f"Cookie 不存在: {domain}", type="negative")
             return
-        ok = await verify_cookie(str(cookie_path))
+        ok = await verify_fn(str(cookie_path))
         if getattr(client, "_deleted", False):
             return
         with cookie_table_container:
             if ok:
-                ui.notify(f"Cookie 验证成功（{domain}），知乎可正常访问", type="positive")
+                ui.notify(
+                    f"Cookie 验证成功（{domain}），{site_name}可正常访问",
+                    type="positive",
+                )
             else:
                 ui.notify(
                     f"Cookie 验证失败（{domain}）：可能已失效，请重新从浏览器导出",
@@ -216,7 +233,7 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
                         )
                         return
                     ui.notify(f"Cookie 已保存（{domain}）", type="positive")
-                    if _is_zhihu_domain(domain):
+                    if _is_zhihu_domain(domain) or _is_douban_domain(domain):
                         background_tasks.create(
                             _run_cookie_test(domain, ui.context.client)
                         )
@@ -311,7 +328,7 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
                         delete_cookie(original_domain)
 
                     ui.notify(f"Cookie 已更新（{new_domain}）", type="positive")
-                    if _is_zhihu_domain(new_domain):
+                    if _is_zhihu_domain(new_domain) or _is_douban_domain(new_domain):
                         background_tasks.create(
                             _run_cookie_test(new_domain, ui.context.client)
                         )

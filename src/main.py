@@ -6,8 +6,9 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+import httpx
 from fastapi import Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from nicegui import app, ui
 
 # 添加 src 到 sys.path
@@ -56,6 +57,42 @@ def serve_download_file(download_id: int, filename: str):
     )
 
 
+@app.get("/douban-image")
+async def douban_image(url: str):
+    """代理豆瓣图片（预览用）。
+
+    豆瓣 CDN（img*.doubanio.com）只接受 douban.com / doubanio.com 来源的
+    Referer，本地部署的浏览器页面无法伪造，故由服务端带 Referer 代抓后返回。
+
+    仅允许 doubanio.com 域名，防止 SSRF。
+    """
+    host = (urlparse(url).hostname or "").lower()
+    if not host.endswith("doubanio.com"):
+        return {"error": "仅允许 doubanio.com 图片 URL"}, 400
+    try:
+        async with httpx.AsyncClient(
+            timeout=30,
+            follow_redirects=True,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+                "Referer": "https://www.douban.com/",
+            },
+        ) as client:
+            resp = await client.get(url)
+    except httpx.HTTPError:
+        return {"error": "图片获取失败"}, 502
+    if resp.status_code != 200:
+        return {"error": "图片获取失败"}, resp.status_code
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("content-type", "image/jpeg"),
+    )
+
+
 # =============================================================================
 # Android 分享 API
 # =============================================================================
@@ -72,6 +109,13 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
     from core.ytdlp_handler import create_download_record
     from core.ytdlp_handler import extract_info as _extract_info
     from pages.home import classify_urls
+
+    # 豆瓣安全校验页链接（浏览器未登录/被风控重定向后地址栏的 URL）无法直接下载
+    if "sec.douban.com" in url:
+        raise ValueError(
+            "检测到豆瓣安全校验页链接（sec.douban.com）："
+            "请复制人物主页或照片列表页链接"
+        )
 
     url_type = classify_urls([url])
     if url_type == "mixed":
@@ -134,6 +178,41 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
             return {"status": "ok", "download_id": dl_id, "title": title, "type": "zhihu_image"}
 
         raise ValueError("未能从知乎回答提取到可下载内容")
+
+    if url_type == "douban_photo":
+        from core.douban_photo import DoubanAccessError, extract_douban_photos
+        from core.download_queue import download_queue
+
+        try:
+            douban_info = await asyncio.wait_for(
+                extract_douban_photos(url, cookie),
+                timeout=60,
+            )
+        except ValueError:
+            raise
+        except DoubanAccessError as e:
+            raise ValueError(str(e)) from e
+        except Exception as e:
+            raise ValueError(f"豆瓣页面访问失败，请检查 Cookie 是否有效: {e}") from e
+
+        if douban_info.get("image_count", 0) > 0:
+            title = douban_info.get("title") or url
+            thumbnail = douban_info.get("thumbnail") or ""
+            try:
+                dl_id = create_download_record(url, title, thumbnail, "images")
+                await download_queue.enqueue(
+                    url=url,
+                    format_id="images",
+                    cookie_file=cookie,
+                    download_id=dl_id,
+                    task_type="douban_photo",
+                    note_info=douban_info,
+                )
+            except Exception as e:
+                raise ValueError(f"创建下载任务失败: {e}") from e
+            return {"status": "ok", "download_id": dl_id, "title": title, "type": "douban_photo"}
+
+        raise ValueError("未能从豆瓣人物页面提取到可下载内容")
 
     # ---- 视频 ----
     if format_id:

@@ -1,10 +1,12 @@
 import logging
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from nicegui import app, background_tasks, run, ui
 
 from core.cookie_manager import get_cookie_for_url
+from core.douban_photo import is_douban_photo_url
 from core.download_queue import download_queue
 from core.ytdlp_handler import (
     clear_completed_records,
@@ -184,7 +186,13 @@ def _render_list_card(rec: dict, dynamic_refs: dict) -> None:
         with ui.row().classes("w-full items-start gap-4"):
             thumb = rec.get("thumbnail")
             if thumb:
-                ui.image(thumb).classes("w-32 h-20 object-cover rounded")
+                # 豆瓣图走应用内代理（CDN 只接受豆瓣来源 Referer），其余站点直连
+                thumb_src = (
+                    f"/douban-image?url={quote(thumb)}"
+                    if "doubanio.com" in thumb
+                    else thumb
+                )
+                ui.image(thumb_src).classes("w-32 h-20 object-cover rounded")
 
             with ui.column().classes("flex-1 min-w-0"):
                 ui.link(short_title, rec.get("url", ""), new_tab=True).classes(
@@ -199,6 +207,10 @@ def _render_list_card(rec: dict, dynamic_refs: dict) -> None:
                         ("https://www.zhihu.com", "http://www.zhihu.com")
                     ):
                         ui.label("类型: 知乎图片").classes("text-caption text-grey")
+                    elif rec.get("format_id") == "images" and is_douban_photo_url(
+                        rec["url"]
+                    ):
+                        ui.label("类型: 豆瓣图片").classes("text-caption text-grey")
                     elif rec.get("format_id") == "images":
                         ui.label("类型: 图片").classes("text-caption text-grey")
                     elif rec.get("format_id"):
@@ -250,7 +262,13 @@ def _render_grid_card(rec: dict, dynamic_refs: dict) -> None:
         # 缩略图
         thumb = rec.get("thumbnail")
         if thumb:
-            ui.image(thumb).classes("w-full h-40 object-cover")
+            # 豆瓣图走应用内代理（CDN 只接受豆瓣来源 Referer），其余站点直连
+            thumb_src = (
+                f"/douban-image?url={quote(thumb)}"
+                if "doubanio.com" in thumb
+                else thumb
+            )
+            ui.image(thumb_src).classes("w-full h-40 object-cover")
         else:
             ui.label("").classes("w-full h-40 bg-grey-3")
 
@@ -362,9 +380,12 @@ async def _retry_download(rec: dict) -> None:
 
     is_note = rec.get("format_id") == "images"
     is_zhihu = is_note and is_zhihu_image_url(rec["url"])
+    is_douban = is_note and is_douban_photo_url(rec["url"])
     task_type: str
     if is_zhihu:
         task_type = "zhihu_image"
+    elif is_douban:
+        task_type = "douban_photo"
     elif is_note:
         task_type = "douyin_note"
     else:

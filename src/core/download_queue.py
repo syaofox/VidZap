@@ -17,7 +17,7 @@ class DownloadTask:
     subtitle_langs: list[str] | None
     progress_callback: Callable[[float, str, str], None] | None
     download_id: int | None
-    task_type: str = field(default="video")  # "video", "douyin_note", or "zhihu_image"
+    task_type: str = field(default="video")  # "video", "douyin_note", "zhihu_image", "douban_photo"
     note_info: dict | None = None  # pre-extracted note info to skip re-extraction
 
 
@@ -123,6 +123,17 @@ class DownloadQueue:
                     from core.zhihu_answer import download_zhihu_images
 
                     await download_zhihu_images(
+                        url=task.url,
+                        cookie_file=task.cookie_file,
+                        progress_callback=task.progress_callback,
+                        cancel_event=cancel_event,
+                        download_id=task.download_id,
+                        note_info=task.note_info,
+                    )
+                elif task.task_type == "douban_photo":
+                    from core.douban_photo import download_douban_images
+
+                    await download_douban_images(
                         url=task.url,
                         cookie_file=task.cookie_file,
                         progress_callback=task.progress_callback,
