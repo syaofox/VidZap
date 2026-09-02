@@ -20,9 +20,7 @@ DOWNLOADS_DIR = Path("downloads")
 MAX_TITLE_LENGTH = 80
 
 # Douyin URL 模式
-_DOUYIN_JINGXUAN_PATTERN = re.compile(
-    r"https?://(?:www\.)?douyin\.com/jingxuan"
-)
+_DOUYIN_JINGXUAN_PATTERN = re.compile(r"https?://(?:www\.)?douyin\.com/jingxuan")
 
 # 需要 normalize_url 处理的 URL 模式（各站点不被 yt-dlp 直接支持的格式）
 _NORMALIZE_PATTERNS: list[re.Pattern] = [
@@ -179,7 +177,8 @@ def get_suggested_formats(formats: list[dict]) -> list[dict]:
     video_only = [f for f in formats if f["vcodec"] != "none" and f["acodec"] == "none"]
     audio_only = [f for f in formats if f["vcodec"] == "none" and f["acodec"] != "none"]
     combined = [
-        f for f in formats
+        f
+        for f in formats
         if (f["vcodec"] != "none" and f["acodec"] != "none")
         or (f["vcodec"] == "none" and f["acodec"] == "none")
     ]
@@ -196,9 +195,7 @@ def get_suggested_formats(formats: list[dict]) -> list[dict]:
     suggested: list[dict] = []
     if has_ffmpeg and video_only:
         video_only.sort(key=lambda f: (_height(f), f.get("filesize", 0)), reverse=True)
-        best_audio = (
-            max(audio_only, key=lambda f: f.get("filesize", 0)) if audio_only else None
-        )
+        best_audio = max(audio_only, key=lambda f: f.get("filesize", 0)) if audio_only else None
         seen = set()
         for v in video_only:
             h = _height(v)
@@ -206,24 +203,28 @@ def get_suggested_formats(formats: list[dict]) -> list[dict]:
                 continue
             seen.add(h)
             if best_audio:
-                suggested.append({
-                    "label": f"{h}p",
-                    "format_id": f"{v['format_id']}+{best_audio['format_id']}",
-                    "ext": "mp4",
-                    "filesize": v.get("filesize", 0) + best_audio.get("filesize", 0),
-                    "vcodec": v["vcodec"],
-                    "acodec": best_audio["acodec"],
-                })
+                suggested.append(
+                    {
+                        "label": f"{h}p",
+                        "format_id": f"{v['format_id']}+{best_audio['format_id']}",
+                        "ext": "mp4",
+                        "filesize": v.get("filesize", 0) + best_audio.get("filesize", 0),
+                        "vcodec": v["vcodec"],
+                        "acodec": best_audio["acodec"],
+                    }
+                )
         if audio_only:
             best_a = max(audio_only, key=lambda f: f.get("filesize", 0))
-            suggested.append({
-                "label": "仅音频",
-                "format_id": best_a["format_id"],
-                "ext": best_a["ext"],
-                "filesize": best_a.get("filesize", 0),
-                "vcodec": "none",
-                "acodec": best_a["acodec"],
-            })
+            suggested.append(
+                {
+                    "label": "仅音频",
+                    "format_id": best_a["format_id"],
+                    "ext": best_a["ext"],
+                    "filesize": best_a.get("filesize", 0),
+                    "vcodec": "none",
+                    "acodec": best_a["acodec"],
+                }
+            )
     else:
         combined.sort(key=lambda f: (_height(f), f.get("filesize", 0)), reverse=True)
         seen = set()
@@ -232,23 +233,27 @@ def get_suggested_formats(formats: list[dict]) -> list[dict]:
             if h in seen:
                 continue
             seen.add(h)
-            suggested.append({
-                "label": f"{h}p" if h > 0 else f["resolution"],
-                "format_id": f["format_id"],
-                "ext": f["ext"],
-                "filesize": f.get("filesize", 0),
-                "vcodec": f["vcodec"],
-                "acodec": f["acodec"],
-            })
+            suggested.append(
+                {
+                    "label": f"{h}p" if h > 0 else f["resolution"],
+                    "format_id": f["format_id"],
+                    "ext": f["ext"],
+                    "filesize": f.get("filesize", 0),
+                    "vcodec": f["vcodec"],
+                    "acodec": f["acodec"],
+                }
+            )
         for a in audio_only:
-            suggested.append({
-                "label": "仅音频",
-                "format_id": a["format_id"],
-                "ext": a["ext"],
-                "filesize": a.get("filesize", 0),
-                "vcodec": "none",
-                "acodec": a["acodec"],
-            })
+            suggested.append(
+                {
+                    "label": "仅音频",
+                    "format_id": a["format_id"],
+                    "ext": a["ext"],
+                    "filesize": a.get("filesize", 0),
+                    "vcodec": "none",
+                    "acodec": a["acodec"],
+                }
+            )
     return suggested
 
 
@@ -403,7 +408,6 @@ async def start_download(
         _save_download_history(url, format_id, file_path)
 
     return file_path
-
 
 
 def _is_format_error(e: Exception) -> bool:

@@ -1,4 +1,5 @@
 """Tests for core.douyin_note."""
+
 from unittest.mock import patch
 
 import pytest
@@ -19,9 +20,7 @@ class TestDownloadNoteImagesWithNoteInfo:
             extract_called = True
             return {}
 
-        monkeypatch.setattr(
-            "core.douyin_note.extract_note_images", mock_extract
-        )
+        monkeypatch.setattr("core.douyin_note.extract_note_images", mock_extract)
 
         note_info = {
             "id": "123",
@@ -66,9 +65,7 @@ class TestDownloadNoteImagesWithNoteInfo:
                 "video_count": 0,
             }
 
-        monkeypatch.setattr(
-            "core.douyin_note.extract_note_images", mock_extract
-        )
+        monkeypatch.setattr("core.douyin_note.extract_note_images", mock_extract)
 
         url = "https://www.douyin.com/note/123"
 

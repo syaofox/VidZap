@@ -1,4 +1,5 @@
 """Tests for the Android share API (main._do_share) and image proxy."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -27,18 +28,36 @@ class TestDoShareVideoAnalyze:
                     "thumbnail": "https://example.com/thumb.jpg",
                     "duration": 300,
                     "formats": [
-                        {"format_id": "137", "vcodec": "avc1", "acodec": "none",
-                         "resolution": "1920x1080", "ext": "mp4", "filesize": 500},
-                        {"format_id": "140", "vcodec": "none", "acodec": "mp4a",
-                         "resolution": "audio only", "ext": "m4a", "filesize": 50},
+                        {
+                            "format_id": "137",
+                            "vcodec": "avc1",
+                            "acodec": "none",
+                            "resolution": "1920x1080",
+                            "ext": "mp4",
+                            "filesize": 500,
+                        },
+                        {
+                            "format_id": "140",
+                            "vcodec": "none",
+                            "acodec": "mp4a",
+                            "resolution": "audio only",
+                            "ext": "m4a",
+                            "filesize": 50,
+                        },
                     ],
                 },
             ),
             patch("main.get_suggested_formats") as mock_suggested,
         ):
             mock_suggested.return_value = [
-                {"label": "1080p", "format_id": "137+140", "ext": "mp4",
-                 "filesize": 550, "vcodec": "avc1", "acodec": "mp4a"},
+                {
+                    "label": "1080p",
+                    "format_id": "137+140",
+                    "ext": "mp4",
+                    "filesize": 550,
+                    "vcodec": "avc1",
+                    "acodec": "mp4a",
+                },
             ]
             from main import _do_share
 
@@ -226,15 +245,9 @@ class TestDoShareDouban:
         douban_info = {
             "title": "王怡仁的图片",
             "thumbnail": "https://img1.doubanio.com/view/photo/photo/public/p1.jpg",
-            "image_urls": [
-                "https://img1.doubanio.com/view/photo/xl/public/p1.jpg"
-            ],
-            "detail_urls": [
-                "https://www.douban.com/personage/27499516/photo/1"
-            ],
-            "thumb_urls": [
-                "https://img1.doubanio.com/view/photo/photo/public/p1.jpg"
-            ],
+            "image_urls": ["https://img1.doubanio.com/view/photo/xl/public/p1.jpg"],
+            "detail_urls": ["https://www.douban.com/personage/27499516/photo/1"],
+            "thumb_urls": ["https://img1.doubanio.com/view/photo/photo/public/p1.jpg"],
             "image_count": 1,
         }
         with (
@@ -250,9 +263,7 @@ class TestDoShareDouban:
         ):
             from main import _do_share
 
-            result = await _do_share(
-                "https://www.douban.com/personage/27499516/photos/"
-            )
+            result = await _do_share("https://www.douban.com/personage/27499516/photos/")
 
         assert result == {
             "status": "ok",
@@ -288,9 +299,7 @@ class TestDoShareDouban:
             from main import _do_share
 
             with pytest.raises(ValueError, match="未能从豆瓣人物页面提取到可下载内容"):
-                await _do_share(
-                    "https://www.douban.com/personage/27499516/photos/"
-                )
+                await _do_share("https://www.douban.com/personage/27499516/photos/")
 
 
 class TestDoubanImageProxy:
@@ -315,9 +324,7 @@ class TestDoubanImageProxy:
 
             from main import douban_image
 
-            resp = await douban_image(
-                "https://img9.doubanio.com/view/photo/photo/public/p1.jpg"
-            )
+            resp = await douban_image("https://img9.doubanio.com/view/photo/photo/public/p1.jpg")
 
         assert resp.status_code == 200
         assert resp.body == b"fakeimage"
@@ -348,9 +355,7 @@ class TestDoubanImageProxy:
 
             from main import douban_image
 
-            resp = await douban_image(
-                "https://img9.doubanio.com/view/photo/photo/public/p1.jpg"
-            )
+            resp = await douban_image("https://img9.doubanio.com/view/photo/photo/public/p1.jpg")
 
         assert resp[1] == 404
 
@@ -363,9 +368,7 @@ class TestDoubanImageProxy:
 
             from main import douban_image
 
-            resp = await douban_image(
-                "https://img9.doubanio.com/view/photo/photo/public/p1.jpg"
-            )
+            resp = await douban_image("https://img9.doubanio.com/view/photo/photo/public/p1.jpg")
 
         assert resp[1] == 502
 
@@ -386,9 +389,7 @@ class TestDoShareErrors:
         from main import _do_share
 
         with pytest.raises(ValueError, match="sec.douban.com"):
-            await _do_share(
-                "https://sec.douban.com/c?r=https%3A%2F%2Fwww.douban.com%2F"
-            )
+            await _do_share("https://sec.douban.com/c?r=https%3A%2F%2Fwww.douban.com%2F")
 
 
 class TestEnvBool:
@@ -414,4 +415,3 @@ class TestEnvBool:
         monkeypatch.delenv("VIDZAP_TEST_BOOL", raising=False)
         assert _env_bool("VIDZAP_TEST_BOOL") is False
         assert _env_bool("VIDZAP_TEST_BOOL", default=True) is True
-

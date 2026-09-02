@@ -39,7 +39,12 @@ def _expiry_display(expiry: dict) -> tuple[str, str]:
     return "—", "text-grey-7"
 
 
-def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = "") -> None:
+def render(
+    edit_domain: str = "",
+    delete_domain: str = "",
+    test_domain: str = "",
+    refresh_domain: str = "",
+) -> None:
     """渲染 Cookie 设置页面"""
     ui.on_exception(lambda e: ui.notify(f"页面错误: {e}", type="negative"))
 
@@ -85,15 +90,20 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
                     pagination=10,
                 ).classes("w-full")
 
-                cookie_table_ref["table"].add_slot('body-cell-expiry', '''
+                cookie_table_ref["table"].add_slot(
+                    "body-cell-expiry",
+                    """
                     <td :props="props">
                         <span :class="props.value ? props.value.class : 'text-grey-7'">
                             {{ props.value ? props.value.display : '—' }}
                         </span>
                     </td>
-                ''')
+                """,
+                )
 
-                cookie_table_ref["table"].add_slot('body-cell-actions', '''
+                cookie_table_ref["table"].add_slot(
+                    "body-cell-actions",
+                    """
                     <td :props="props"
                         style="white-space: nowrap; padding: 0 4px 0 0; text-align: right;">
                         <a :href="'/settings?test=' + encodeURIComponent(props.row.domain)"
@@ -105,6 +115,13 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
                            title="验证 Cookie 是否有效">
                             <q-icon name="verified_user" size="xs"></q-icon>
                         </a>
+                        <a :href="'/settings?refresh=' + encodeURIComponent(props.row.domain)"
+                           v-if="props.row.domain === 'zhihu.com' ||
+                                 props.row.domain.endsWith('.zhihu.com')"
+                           class="text-positive q-ml-xs" style="text-decoration: none;"
+                           title="刷新知乎 Cookie（延长有效期）">
+                            <q-icon name="refresh" size="xs"></q-icon>
+                        </a>
                         <a :href="'/settings?edit=' + encodeURIComponent(props.row.domain)"
                            class="text-primary" style="text-decoration: none;">
                             <q-icon name="edit" size="xs"></q-icon>
@@ -114,7 +131,8 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
                             <q-icon name="delete" size="xs"></q-icon>
                         </a>
                     </td>
-                ''')
+                """,
+                )
 
                 with ui.row().classes("w-full justify-end gap-2 mt-4"):
                     ui.button("添加 Cookie", on_click=lambda: show_add_dialog()).props(
@@ -143,9 +161,7 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
             site_name = "知乎"
 
         cookie_data = get_cookie(domain)
-        cookie_path = (
-            get_cookie_dir() / cookie_data["cookie_file"] if cookie_data else None
-        )
+        cookie_path = get_cookie_dir() / cookie_data["cookie_file"] if cookie_data else None
         if cookie_path is None:
             if getattr(client, "_deleted", False):
                 return
@@ -164,6 +180,50 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
             else:
                 ui.notify(
                     f"Cookie 验证失败（{domain}）：可能已失效，请重新从浏览器导出",
+                    type="negative",
+                )
+
+    async def _run_cookie_refresh(domain: str, client: Client) -> None:
+        """刷新知乎 Cookie 的 __zse_ck 并提示结果。
+
+        仅支持 zhihu.com 及其子域；豆瓣等其他域名不支持刷新。
+        与 _run_cookie_test 同理，需预先捕获 client 并用
+        ``with cookie_table_container:`` 进入 slot。
+        """
+        if not _is_zhihu_domain(domain):
+            if getattr(client, "_deleted", False):
+                return
+            with cookie_table_container:
+                ui.notify(f"仅知乎 Cookie 支持刷新: {domain}", type="warning")
+            return
+        from core.zhihu_answer import refresh_zhihu_cookie
+
+        cookie_data = get_cookie(domain)
+        cookie_path = get_cookie_dir() / cookie_data["cookie_file"] if cookie_data else None
+        if cookie_path is None:
+            if getattr(client, "_deleted", False):
+                return
+            with cookie_table_container:
+                ui.notify(f"Cookie 不存在: {domain}", type="negative")
+            return
+        if getattr(client, "_deleted", False):
+            return
+        with cookie_table_container:
+            ui.notify(f"正在刷新知乎 Cookie（{domain}），请稍候...", type="info")
+        ok = await refresh_zhihu_cookie(str(cookie_path))
+        if getattr(client, "_deleted", False):
+            return
+        with cookie_table_container:
+            if ok:
+                ui.notify(
+                    f"Cookie 刷新成功（{domain}），有效期已延长",
+                    type="positive",
+                )
+                # 刷新后更新表格过期展示
+                background_tasks.create(_load_cookies())
+            else:
+                ui.notify(
+                    f"Cookie 刷新失败（{domain}）：可能已完全失效，请重新从浏览器导出",
                     type="negative",
                 )
 
@@ -234,9 +294,7 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
                         return
                     ui.notify(f"Cookie 已保存（{domain}）", type="positive")
                     if _is_zhihu_domain(domain) or _is_douban_domain(domain):
-                        background_tasks.create(
-                            _run_cookie_test(domain, ui.context.client)
-                        )
+                        background_tasks.create(_run_cookie_test(domain, ui.context.client))
                     dialog.close()
                     ui.navigate.to("/settings")
 
@@ -258,9 +316,9 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
         with ui.dialog() as dialog, ui.card().classes("w-[28rem]"):
             ui.label("修改 Cookie").classes("text-h6 mb-2")
 
-            ui.label(
-                "修改域名或 Cookie 内容。修改域名将重新保存 Cookie。"
-            ).classes("text-sm text-grey-7 mb-4")
+            ui.label("修改域名或 Cookie 内容。修改域名将重新保存 Cookie。").classes(
+                "text-sm text-grey-7 mb-4"
+            )
 
             domain_input = (
                 ui.input(
@@ -298,6 +356,7 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
             )
 
             with ui.row().classes("w-full justify-end gap-2"):
+
                 def cancel_and_close() -> None:
                     dialog.close()
                     ui.navigate.to("/settings")
@@ -329,9 +388,7 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
 
                     ui.notify(f"Cookie 已更新（{new_domain}）", type="positive")
                     if _is_zhihu_domain(new_domain) or _is_douban_domain(new_domain):
-                        background_tasks.create(
-                            _run_cookie_test(new_domain, ui.context.client)
-                        )
+                        background_tasks.create(_run_cookie_test(new_domain, ui.context.client))
                     dialog.close()
                     ui.navigate.to("/settings")
 
@@ -345,11 +402,15 @@ def render(edit_domain: str = "", delete_domain: str = "", test_domain: str = ""
     if test_domain:
         background_tasks.create(_run_cookie_test(test_domain, ui.context.client))
 
+    if refresh_domain:
+        background_tasks.create(_run_cookie_refresh(refresh_domain, ui.context.client))
+
     def show_delete_confirm_dialog(domain: str) -> None:
         with ui.dialog() as dialog, ui.card().classes("w-80"):
             ui.label("确认删除").classes("text-h6 mb-2")
             ui.label(f"确定要删除 {domain} 的 Cookie 吗？").classes("mb-4")
             with ui.row().classes("w-full justify-end gap-2"):
+
                 def cancel_delete() -> None:
                     dialog.close()
                     ui.navigate.to("/settings")

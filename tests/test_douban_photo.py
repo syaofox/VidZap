@@ -1,4 +1,5 @@
 """Tests for core.douban_photo module."""
+
 import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -25,9 +26,7 @@ from core.douban_photo import (
 from core.ytdlp_handler import DownloadCancelledError
 
 _LIST_URL = "https://www.douban.com/personage/27499516/photos/"
-_PAGE_URL = (
-    "https://www.douban.com/personage/27499516/photos/?start=0&sortby=like"
-)
+_PAGE_URL = "https://www.douban.com/personage/27499516/photos/?start=0&sortby=like"
 
 
 def _list_page_html(photo_ids: list[str], total: int | None = None) -> str:
@@ -73,8 +72,7 @@ class TestIsDoubanPhotoUrl:
             ("https://www.douban.com/personage/27499516/photos/", True),
             ("https://www.douban.com/personage/27499516/photos", True),
             (
-                "https://www.douban.com/personage/27499516/photos/"
-                "?start=30&sortby=like",
+                "https://www.douban.com/personage/27499516/photos/?start=30&sortby=like",
                 True,
             ),
             (
@@ -121,8 +119,7 @@ class TestParseCookies:
     def test_ignores_invalid_lines(self, tmp_path):
         cookie_file = tmp_path / "cookies.txt"
         cookie_file.write_text(
-            "invalid line without tabs\n"
-            ".douban.com\tTRUE\t/\tFALSE\t1767225600\t\t\n"
+            "invalid line without tabs\n.douban.com\tTRUE\t/\tFALSE\t1767225600\t\t\n"
         )
         result = _parse_cookies(str(cookie_file))
         assert result == {}
@@ -132,15 +129,12 @@ class TestToOriginalUrl:
     def test_thumbnail_to_original(self):
         url = "https://img9.doubanio.com/view/photo/photo/public/p812130995.jpg"
         assert (
-            _to_original_url(url)
-            == "https://img9.doubanio.com/view/photo/xl/public/p812130995.jpg"
+            _to_original_url(url) == "https://img9.doubanio.com/view/photo/xl/public/p812130995.jpg"
         )
 
     def test_different_hosts(self):
         url = "https://img1.doubanio.com/view/photo/photo/public/p1.jpg"
-        assert _to_original_url(url).startswith(
-            "https://img1.doubanio.com/view/photo/xl/"
-        )
+        assert _to_original_url(url).startswith("https://img1.doubanio.com/view/photo/xl/")
 
     def test_original_preserved(self):
         url = "https://img9.doubanio.com/view/photo/xl/public/p1.jpg"
@@ -153,10 +147,7 @@ class TestParsePhotoItems:
         items = _parse_photo_items(html)
         assert len(items) == 2
         assert items[0]["photo_id"] == "812130995"
-        assert (
-            items[0]["detail_url"]
-            == "https://www.douban.com/personage/27499516/photo/812130995"
-        )
+        assert items[0]["detail_url"] == "https://www.douban.com/personage/27499516/photo/812130995"
         assert items[0]["thumbnail"] == (
             "https://img1.doubanio.com/view/photo/photo/public/p812130995.jpg"
         )
@@ -179,10 +170,7 @@ class TestExtractTitle:
         assert _extract_title("<h1>王怡仁的图片</h1>", "27499516") == "王怡仁的图片"
 
     def test_title_tag(self):
-        assert (
-            _extract_title("<title>王怡仁的图片</title>", "27499516")
-            == "王怡仁的图片"
-        )
+        assert _extract_title("<title>王怡仁的图片</title>", "27499516") == "王怡仁的图片"
 
     def test_fallback(self):
         assert _extract_title("<html></html>", "27499516") == "豆瓣人物图片 27499516"
@@ -190,9 +178,10 @@ class TestExtractTitle:
 
 class TestBuildPageUrl:
     def test_build_page_url(self):
-        assert _build_page_url(
-            "https://www.douban.com/personage/1/photos/", 30, "like"
-        ) == "https://www.douban.com/personage/1/photos/?start=30&sortby=like"
+        assert (
+            _build_page_url("https://www.douban.com/personage/1/photos/", 30, "like")
+            == "https://www.douban.com/personage/1/photos/?start=30&sortby=like"
+        )
 
 
 class TestGuessExtension:
@@ -224,15 +213,9 @@ class TestExtractDoubanPhotos:
 
         assert result["title"] == "测试人物的图片"
         assert result["image_count"] == 2
-        assert result["image_urls"][0] == (
-            "https://img1.doubanio.com/view/photo/xl/public/p1.jpg"
-        )
-        assert result["image_urls"][1] == (
-            "https://img2.doubanio.com/view/photo/xl/public/p2.jpg"
-        )
-        assert result["detail_urls"][0] == (
-            "https://www.douban.com/personage/27499516/photo/1"
-        )
+        assert result["image_urls"][0] == ("https://img1.doubanio.com/view/photo/xl/public/p1.jpg")
+        assert result["image_urls"][1] == ("https://img2.doubanio.com/view/photo/xl/public/p2.jpg")
+        assert result["detail_urls"][0] == ("https://www.douban.com/personage/27499516/photo/1")
         assert result["thumb_urls"] == [
             "https://img1.doubanio.com/view/photo/photo/public/p1.jpg",
             "https://img2.doubanio.com/view/photo/photo/public/p2.jpg",
@@ -254,9 +237,7 @@ class TestExtractDoubanPhotos:
         assert result["image_count"] == 67
         assert len(result["image_urls"]) == 67
         assert len(set(result["detail_urls"])) == 67
-        requested = [
-            c.args[0] for c in mock_client_instance.get.call_args_list
-        ]
+        requested = [c.args[0] for c in mock_client_instance.get.call_args_list]
         assert requested == [
             "https://www.douban.com/personage/27499516/photos/?start=0&sortby=like",
             "https://www.douban.com/personage/27499516/photos/?start=30&sortby=like",
@@ -267,9 +248,7 @@ class TestExtractDoubanPhotos:
     async def test_extract_dedups_photo_ids(self):
         page1 = _make_resp(_list_page_html([str(i) for i in range(1, 31)], total=45))
         # 第 2 页 30 个条目，其中 15 个与第 1 页重复
-        page2 = _make_resp(
-            _list_page_html([str(i) for i in range(16, 46)], total=45)
-        )
+        page2 = _make_resp(_list_page_html([str(i) for i in range(16, 46)], total=45))
 
         with patch("core.douban_photo.httpx.AsyncClient") as mock_client:
             mock_client_instance = mock_client.return_value.__aenter__.return_value
@@ -291,9 +270,7 @@ class TestExtractDoubanPhotos:
                 "https://www.douban.com/personage/27499516/photos/?sortby=time"
             )
 
-        requested = [
-            c.args[0] for c in mock_client_instance.get.call_args_list
-        ]
+        requested = [c.args[0] for c in mock_client_instance.get.call_args_list]
         assert requested[0] == (
             "https://www.douban.com/personage/27499516/photos/?start=0&sortby=time"
         )
@@ -306,14 +283,10 @@ class TestExtractDoubanPhotos:
             mock_client_instance = mock_client.return_value.__aenter__.return_value
             mock_client_instance.get.return_value = _make_resp(html)
 
-            result = await extract_douban_photos(
-                "https://www.douban.com/personage/27499516/"
-            )
+            result = await extract_douban_photos("https://www.douban.com/personage/27499516/")
 
         assert result["image_count"] == 2
-        requested = [
-            c.args[0] for c in mock_client_instance.get.call_args_list
-        ]
+        requested = [c.args[0] for c in mock_client_instance.get.call_args_list]
         assert requested[0] == (
             "https://www.douban.com/personage/27499516/photos/?start=0&sortby=like"
         )
@@ -334,9 +307,7 @@ class TestExtractDoubanPhotos:
     @pytest.mark.asyncio
     async def test_extract_non_list_url_raises(self):
         with pytest.raises(ValueError, match="Not a Douban personage photo URL"):
-            await extract_douban_photos(
-                "https://www.douban.com/personage/27499516/photo/812130995"
-            )
+            await extract_douban_photos("https://www.douban.com/personage/27499516/photo/812130995")
 
 
 class TestDoubanAccessError:
@@ -354,9 +325,7 @@ class TestDoubanAccessError:
     @pytest.mark.asyncio
     async def test_403_with_cookie_raises_expired_message(self, tmp_path):
         cookie_file = tmp_path / "douban.txt"
-        cookie_file.write_text(
-            ".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n"
-        )
+        cookie_file.write_text(".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n")
         with patch("core.douban_photo.httpx.AsyncClient") as mock_client:
             mock_client_instance = mock_client.return_value.__aenter__.return_value
             mock_client_instance.get.return_value = _make_resp("", status=403)
@@ -407,9 +376,7 @@ class TestVerifyCookie:
     @pytest.mark.asyncio
     async def test_verify_success(self, tmp_path):
         cookie_file = tmp_path / "douban.txt"
-        cookie_file.write_text(
-            ".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n"
-        )
+        cookie_file.write_text(".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n")
         with patch("core.douban_photo.httpx.AsyncClient") as mock_client:
             mock_client_instance = mock_client.return_value.__aenter__.return_value
             mock_client_instance.get.return_value = _make_resp(
@@ -422,9 +389,7 @@ class TestVerifyCookie:
     @pytest.mark.asyncio
     async def test_verify_403_fails(self, tmp_path):
         cookie_file = tmp_path / "douban.txt"
-        cookie_file.write_text(
-            ".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n"
-        )
+        cookie_file.write_text(".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n")
         with patch("core.douban_photo.httpx.AsyncClient") as mock_client:
             mock_client_instance = mock_client.return_value.__aenter__.return_value
             mock_client_instance.get.return_value = _make_resp("", status=403)
@@ -434,9 +399,7 @@ class TestVerifyCookie:
     @pytest.mark.asyncio
     async def test_verify_redirect_to_sec_fails(self, tmp_path):
         cookie_file = tmp_path / "douban.txt"
-        cookie_file.write_text(
-            ".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n"
-        )
+        cookie_file.write_text(".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n")
         with patch("core.douban_photo.httpx.AsyncClient") as mock_client:
             mock_client_instance = mock_client.return_value.__aenter__.return_value
             mock_client_instance.get.return_value = _make_resp(
@@ -449,9 +412,7 @@ class TestVerifyCookie:
     async def test_verify_redirect_to_sorry_fails(self, tmp_path):
         """风控页（/misc/sorry）即使 200 也不应误判 Cookie 有效。"""
         cookie_file = tmp_path / "douban.txt"
-        cookie_file.write_text(
-            ".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n"
-        )
+        cookie_file.write_text(".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n")
         with patch("core.douban_photo.httpx.AsyncClient") as mock_client:
             mock_client_instance = mock_client.return_value.__aenter__.return_value
             mock_client_instance.get.return_value = _make_resp(
@@ -475,9 +436,7 @@ class TestVerifyCookie:
     @pytest.mark.asyncio
     async def test_verify_network_error(self, tmp_path):
         cookie_file = tmp_path / "douban.txt"
-        cookie_file.write_text(
-            ".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n"
-        )
+        cookie_file.write_text(".douban.com\tTRUE\t/\tFALSE\t1767225600\tbid\tabc123\n")
         with patch("core.douban_photo.httpx.AsyncClient") as mock_client:
             mock_client_instance = mock_client.return_value.__aenter__.return_value
             mock_client_instance.get.side_effect = httpx.ConnectError("boom")
@@ -523,9 +482,7 @@ class TestResolveOriginalFromDetail:
     async def test_resolve_none_without_zoom_link(self):
         with patch("core.douban_photo.httpx.AsyncClient") as mock_client:
             mock_client_instance = mock_client.return_value.__aenter__.return_value
-            mock_client_instance.get.return_value = _make_resp(
-                "<html><body>no zoom</body></html>"
-            )
+            mock_client_instance.get.return_value = _make_resp("<html><body>no zoom</body></html>")
 
             result = await _resolve_original_from_detail(
                 "https://www.douban.com/personage/27499516/photo/1", None
@@ -626,8 +583,7 @@ class TestDownloadDoubanImages:
                 for i in range(1, count + 1)
             ],
             "detail_urls": [
-                f"https://www.douban.com/personage/27499516/photo/{i}"
-                for i in range(1, count + 1)
+                f"https://www.douban.com/personage/27499516/photo/{i}" for i in range(1, count + 1)
             ],
             "thumb_urls": [
                 f"https://img{i}.doubanio.com/view/photo/photo/public/p{i}.jpg"
@@ -681,9 +637,7 @@ class TestDownloadDoubanImages:
         }
 
         with pytest.raises(ValueError, match="未找到可下载的图片"):
-            await download_douban_images(
-                _LIST_URL, cookie_file=None, note_info=note_info
-            )
+            await download_douban_images(_LIST_URL, cookie_file=None, note_info=note_info)
 
     @pytest.mark.asyncio
     async def test_download_cancel_event(self, tmp_path, monkeypatch):
@@ -734,14 +688,10 @@ class TestDownloadDoubanImages:
         """xl 变换下载 404 时，走单页'查看大图'链接重试。"""
         note_info = self._note_info(1)
         xl_url = note_info["image_urls"][0]
-        fallback_url = (
-            "https://nenya.doubanio.com/view/photo/xl/public/p1.jpg?sa_cv=x"
-        )
+        fallback_url = "https://nenya.doubanio.com/view/photo/xl/public/p1.jpg?sa_cv=x"
         _dl_calls: list[str] = []
 
-        async def _flaky_dl(
-            media_url, filepath, media_type, client, cancel_event=None
-        ):
+        async def _flaky_dl(media_url, filepath, media_type, client, cancel_event=None):
             if media_url == xl_url:
                 req = httpx.Request("GET", media_url)
                 resp = httpx.Response(404, request=req)
@@ -756,9 +706,7 @@ class TestDownloadDoubanImages:
         )
         monkeypatch.setattr("core.douban_photo.DOWNLOADS_DIR", tmp_path)
 
-        result = await download_douban_images(
-            _LIST_URL, cookie_file=None, note_info=note_info
-        )
+        result = await download_douban_images(_LIST_URL, cookie_file=None, note_info=note_info)
 
         assert _dl_calls == [fallback_url]
         assert (Path(result) / "img_001.jpg").exists()
@@ -768,9 +716,7 @@ class TestDownloadDoubanImages:
         """xl 失败且无可用兜底时，全部失败应抛错。"""
         note_info = self._note_info(1)
 
-        async def _failing_dl(
-            media_url, filepath, media_type, client, cancel_event=None
-        ):
+        async def _failing_dl(media_url, filepath, media_type, client, cancel_event=None):
             req = httpx.Request("GET", media_url)
             resp = httpx.Response(404, request=req)
             raise httpx.HTTPStatusError("404", request=req, response=resp)
@@ -783,6 +729,4 @@ class TestDownloadDoubanImages:
         monkeypatch.setattr("core.douban_photo.DOWNLOADS_DIR", tmp_path)
 
         with pytest.raises(ValueError, match="所有图片下载失败"):
-            await download_douban_images(
-                _LIST_URL, cookie_file=None, note_info=note_info
-            )
+            await download_douban_images(_LIST_URL, cookie_file=None, note_info=note_info)

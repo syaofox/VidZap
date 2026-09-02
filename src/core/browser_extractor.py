@@ -4,6 +4,7 @@ Defines NoteExtractor ABC that encapsulates browser operations.
 Currently only PlaywrightNoteExtractor is implemented.
 CloakBrowserNoteExtractor is reserved for future use.
 """
+
 import asyncio
 import logging
 import os
@@ -95,9 +96,7 @@ class NoteExtractor(ABC):
     """Abstract base for Douyin note media extraction."""
 
     @abstractmethod
-    async def extract(
-        self, url: str, cookie_file: str | None = None
-    ) -> dict:
+    async def extract(self, url: str, cookie_file: str | None = None) -> dict:
         """Extract note images/videos from a Douyin note URL.
 
         Returns dict with keys: id, title, thumbnail, image_urls, image_count,
@@ -121,9 +120,7 @@ class PlaywrightNoteExtractor(NoteExtractor):
         self._browser = None
         self._playwright = None
 
-    async def extract(
-        self, url: str, cookie_file: str | None = None
-    ) -> dict:
+    async def extract(self, url: str, cookie_file: str | None = None) -> dict:
         from playwright.async_api import async_playwright
         from playwright_stealth import Stealth
 
@@ -239,9 +236,7 @@ class PlaywrightNoteExtractor(NoteExtractor):
                     logger.warning("Scroll failed: %s", e)
 
                 if api_data:
-                    title, image_urls, video_urls = _extract_media_from_api(
-                        api_data, note_id
-                    )
+                    title, image_urls, video_urls = _extract_media_from_api(api_data, note_id)
                     logger.info(
                         "API extraction: title=%r, images=%d, videos=%d",
                         title,
@@ -250,9 +245,7 @@ class PlaywrightNoteExtractor(NoteExtractor):
                     )
 
                 if not image_urls and not video_urls:
-                    title_dom, image_urls, video_urls = await _extract_images_from_dom(
-                        page
-                    )
+                    title_dom, image_urls, video_urls = await _extract_images_from_dom(page)
                     logger.info(
                         "DOM extraction: title=%r, images=%d, videos=%d",
                         title_dom,
@@ -271,9 +264,7 @@ class PlaywrightNoteExtractor(NoteExtractor):
                     debug_dir = Path("downloads") / "debug"
                     debug_dir.mkdir(parents=True, exist_ok=True)
                     try:
-                        await page.screenshot(
-                            path=str(debug_dir / f"note_{note_id}.png")
-                        )
+                        await page.screenshot(path=str(debug_dir / f"note_{note_id}.png"))
                         logger.info(
                             "Debug screenshot saved to %s",
                             debug_dir / f"note_{note_id}.png",
@@ -318,9 +309,7 @@ class CloakBrowserNoteExtractor(NoteExtractor):
     def __init__(self) -> None:
         self._browser = None
 
-    async def extract(
-        self, url: str, cookie_file: str | None = None
-    ) -> dict:
+    async def extract(self, url: str, cookie_file: str | None = None) -> dict:
         raise NotImplementedError(
             "CloakBrowser extractor not yet implemented. "
             "Use PlaywrightNoteExtractor or set VIDZAP_BROWSER=playwright."
@@ -353,9 +342,7 @@ def _get_extractor() -> NoteExtractor:
 # =============================================================================
 
 
-def _extract_media_from_api(
-    api_data: list[dict], note_id: str
-) -> tuple[str, list[str], list[str]]:
+def _extract_media_from_api(api_data: list[dict], note_id: str) -> tuple[str, list[str], list[str]]:
     """Extract title, image_urls, and video_urls from intercepted API responses."""
     for data in api_data:
         if not isinstance(data, dict):

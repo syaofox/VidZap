@@ -145,9 +145,7 @@ def _normalize_cookie_content(content: str, domain: str) -> str | None:
     converted = _raw_to_netscape(content, domain)
     if _is_netscape_format(converted):
         return converted
-    logger.warning(
-        "无法解析 Cookie 内容 (domain=%s): 前100字符=%r", domain, content[:100]
-    )
+    logger.warning("无法解析 Cookie 内容 (domain=%s): 前100字符=%r", domain, content[:100])
     return None
 
 
@@ -180,9 +178,7 @@ def save_cookie(domain: str, cookie_content: str) -> bool:
 def get_cookie(domain: str) -> dict | None:
     domain = normalize_domain(domain)
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM cookies WHERE domain = ?", (domain,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM cookies WHERE domain = ?", (domain,)).fetchone()
         if row is None:
             return None
         result = dict(row)

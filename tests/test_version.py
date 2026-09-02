@@ -1,4 +1,5 @@
 """Tests for core.version."""
+
 from pathlib import Path
 
 from core.version import get_app_version
@@ -25,9 +26,7 @@ class TestGetAppVersion:
 
         version_mod.get_app_version.cache_clear()
         try:
-            monkeypatch.setattr(
-                version_mod, "_PROJECT_ROOT", Path("/nonexistent/vidzap")
-            )
+            monkeypatch.setattr(version_mod, "_PROJECT_ROOT", Path("/nonexistent/vidzap"))
             assert version_mod.get_app_version() == "unknown"
         finally:
             version_mod.get_app_version.cache_clear()

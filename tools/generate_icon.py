@@ -28,12 +28,12 @@ def _draw_arrow(draw: ImageDraw, size: int) -> None:
     y1 = cx + h / 2
 
     points = [
-        (cx - shaft_w / 2, y0),     # 箭杆左上
-        (cx + shaft_w / 2, y0),     # 箭杆右上
+        (cx - shaft_w / 2, y0),  # 箭杆左上
+        (cx + shaft_w / 2, y0),  # 箭杆右上
         (cx + shaft_w / 2, y1 - head_h),  # 箭杆右下（内凹处）
-        (x1, y1 - head_h),          # 箭头右角
-        (cx, y1),                   # 箭头尖（底部中心）
-        (x0, y1 - head_h),          # 箭头左角
+        (x1, y1 - head_h),  # 箭头右角
+        (cx, y1),  # 箭头尖（底部中心）
+        (x0, y1 - head_h),  # 箭头左角
         (cx - shaft_w / 2, y1 - head_h),  # 箭杆左下（内凹处）
     ]
 
@@ -60,6 +60,7 @@ def generate_icon(size: int, output_path: str) -> None:
 
 if __name__ == "__main__":
     import sys
+
     outdir = sys.argv[1] if len(sys.argv) > 1 else "src/static"
     generate_icon(512, f"{outdir}/icon-512.png")
     generate_icon(192, f"{outdir}/icon-192.png")

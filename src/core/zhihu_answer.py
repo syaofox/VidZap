@@ -11,6 +11,7 @@
 注意：知乎页面（含 zhuanlan）受 WAF 保护，无 Cookie 时返回 403，
 需要用户先配置 zhihu.com 的 Cookie。
 """
+
 import asyncio
 import json
 import logging
@@ -37,17 +38,11 @@ class ZhihuAccessError(Exception):
     """知乎页面访问失败（WAF 403 等），向上层传达 cookie 未配置/已失效信息。"""
 
 
-ZHIHU_ANSWER_PATTERN = re.compile(
-    r"https?://(?:www\.)?zhihu\.com/question/\d+/answer/\d+"
-)
+ZHIHU_ANSWER_PATTERN = re.compile(r"https?://(?:www\.)?zhihu\.com/question/\d+/answer/\d+")
 
-ZHIHU_PIN_PATTERN = re.compile(
-    r"https?://(?:www\.)?zhihu\.com/pin/\d+"
-)
+ZHIHU_PIN_PATTERN = re.compile(r"https?://(?:www\.)?zhihu\.com/pin/\d+")
 
-ZHIHU_ARTICLE_PATTERN = re.compile(
-    r"https?://(?:www\.)?zhuanlan\.zhihu\.com/p/\d+"
-)
+ZHIHU_ARTICLE_PATTERN = re.compile(r"https?://(?:www\.)?zhuanlan\.zhihu\.com/p/\d+")
 
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -57,9 +52,18 @@ _USER_AGENT = (
 
 _ZHIHU_REFERER = "https://www.zhihu.com/"
 
-_ZHIHU_IMG_CDN = re.compile(
-    r"https?://[a-zA-Z0-9.-]*?zhimg\.com/[^\s\"'<>]+"
-)
+_ZHIHU_HEADERS = {
+    "User-Agent": _USER_AGENT,
+    "Referer": _ZHIHU_REFERER,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+_ZHIHU_IMG_CDN = re.compile(r"https?://[a-zA-Z0-9.-]*?zhimg\.com/[^\s\"'<>]+")
 
 # 知乎缩略图尺寸前缀：/80/v2-xxx.jpg → 去掉 /80/
 _THUMB_SIZE_REPLACE = re.compile(r"/\d{2,3}/(v2-)")
@@ -147,9 +151,7 @@ def _cookies_to_netscape(cookies: httpx.Cookies, fallback_domain: str) -> str:
         secure = "TRUE" if cookie.secure else "FALSE"
         expiry = str(int(cookie.expires)) if cookie.expires else "0"
         lines.append(
-            "\t".join(
-                [domain, "TRUE", path, secure, expiry, cookie.name, cookie.value or ""]
-            )
+            "\t".join([domain, "TRUE", path, secure, expiry, cookie.name, cookie.value or ""])
         )
     return "\n".join(lines) + "\n"
 
@@ -165,11 +167,190 @@ def _persist_cookie_updates(
     if not cookie_file:
         return
     try:
-        Path(cookie_file).write_text(
-            _cookies_to_netscape(client.cookies, fallback_domain)
-        )
+        Path(cookie_file).write_text(_cookies_to_netscape(client.cookies, fallback_domain))
     except OSError as e:
         logger.warning("Cookie 回写失败 (%s): %s", cookie_file, e)
+
+
+# =============================================================================
+# Playwright 自动刷新（延长知乎 Cookie 有效期）
+# =============================================================================
+
+_BROWSER_REFRESH_TIMEOUT = 20  # 等待 __zse_ck 生成的最长时间（秒）
+
+
+def _playwright_cookies_to_netscape(cookies: list[dict], fallback_domain: str) -> str:
+    """把 Playwright context.cookies() 列表序列化为 Netscape 格式。
+
+    跳过空值 cookie；session 级 cookie（expires == -1）写 0。
+    domain 缺失时用 fallback_domain 兜底并补 "." 前缀。
+    """
+    lines = ["# Netscape HTTP Cookie File"]
+    now = time.time()
+    for c in cookies:
+        name = c.get("name") or ""
+        value = c.get("value") or ""
+        if not name or value in (None, ""):
+            continue
+        expires = c.get("expires", -1)
+        # Playwright 用 -1 表示会话级；httpx 用 None/0
+        if isinstance(expires, (int, float)) and expires != -1 and expires < now:
+            continue
+        domain = c.get("domain") or fallback_domain
+        if domain and not domain.startswith("."):
+            domain = "." + domain
+        path = c.get("path") or "/"
+        secure = "TRUE" if c.get("secure") else "FALSE"
+        if expires is None or expires == -1:
+            expiry = "0"
+        else:
+            try:
+                expiry = str(int(expires))
+            except (ValueError, TypeError):
+                expiry = "0"
+        lines.append("\t".join([domain, "TRUE", path, secure, expiry, name, value]))
+    return "\n".join(lines) + "\n"
+
+
+async def refresh_zhihu_cookie(cookie_file: str | None, timeout: float = 20) -> bool:
+    """用 Playwright 刷新知乎 Cookie 的 ``__zse_ck`` 等 JS 生成项。
+
+    流程：注入旧 Netscape cookie → 访问 ``/hot`` 触发知乎 JS 生成
+    ``__zse_ck`` → 轮询 ``context.cookies()`` 至出现 ``__zse_ck`` →
+    回写 Netscape 文件。
+
+    仅在检测到 ``d_c0`` 等关键 cookie 存在时才尝试；失败返回 False，
+    调用方决定是否重试请求。``verify_cookie`` 路径不应自动调用此函数，
+    由设置页“刷新”按钮显式触发。
+
+    Returns:
+        True 表示刷新成功（文件已更新且含 __zse_ck），否则 False。
+    """
+    if not cookie_file:
+        return False
+    existing = _parse_cookies(cookie_file)
+    if not existing:
+        return False
+    # 关键 cookie 缺失时无法刷新
+    if "d_c0" not in existing:
+        logger.warning("刷新知乎 Cookie 跳过：缺少 d_c0 (%s)", cookie_file)
+        return False
+
+    try:
+        from playwright.async_api import async_playwright
+        from playwright_stealth import Stealth
+    except ImportError as e:
+        logger.warning("Playwright 未安装，无法刷新知乎 Cookie: %s", e)
+        return False
+
+    try:
+        from core.browser_extractor import _ensure_xvfb, _parse_netscape_cookies
+    except ImportError as e:
+        logger.warning("browser_extractor 导入失败: %s", e)
+        return False
+
+    _ensure_xvfb()
+
+    # 将 Netscape 文件转为 Playwright 可注入格式
+    pw_cookies = _parse_netscape_cookies(cookie_file)
+    if not pw_cookies:
+        return False
+
+    # 知乎域名兼容：.zhihu.com 与 www.zhihu.com
+    fallback_domain = _fallback_domain("https://www.zhihu.com/")
+
+    try:
+        async with async_playwright() as pw:
+            browser = None
+            launched = False
+            for use_headless in (False, True):
+                try:
+                    browser = await pw.chromium.launch(
+                        headless=use_headless,
+                        args=[
+                            "--no-sandbox",
+                            "--disable-blink-features=AutomationControlled",
+                            "--disable-dev-shm-usage",
+                        ],
+                    )
+                    launched = True
+                    break
+                except Exception:
+                    continue
+            if not launched or browser is None:
+                logger.warning("刷新知乎 Cookie：浏览器启动失败")
+                return False
+            try:
+                context = await browser.new_context(
+                    user_agent=_USER_AGENT,
+                    viewport={"width": 1280, "height": 720},
+                    locale="zh-CN",
+                    timezone_id="Asia/Shanghai",
+                )
+                if pw_cookies:
+                    try:
+                        await context.add_cookies(pw_cookies)  # type: ignore[arg-type]
+                    except Exception as e:
+                        logger.warning("注入知乎 Cookie 失败: %s", e)
+
+                page = await context.new_page()
+                try:
+                    stealth = Stealth()
+                    await stealth.apply_stealth_async(page)
+                except Exception:
+                    pass
+
+                # 触发 JS 生成 __zse_ck（与 zhihu-fisher 方案一致：访问 /hot）
+                for target in (
+                    "https://www.zhihu.com/hot",
+                    "https://www.zhihu.com/",
+                ):
+                    try:
+                        await page.goto(
+                            target,
+                            wait_until="domcontentloaded",
+                            timeout=15000,
+                        )
+                        break
+                    except Exception as e:
+                        logger.warning("刷新知乎 Cookie 时访问 %s 失败: %s", target, e)
+
+                # 轮询等待 __zse_ck 生成
+                deadline = time.time() + timeout
+                found = False
+                while time.time() < deadline:
+                    try:
+                        all_cookies = await context.cookies()
+                    except Exception:
+                        all_cookies = []
+                    names = {c.get("name") for c in all_cookies}
+                    if "__zse_ck" in names and "d_c0" in names:
+                        found = True
+                        # 回写文件（保留全部 domain 的 cookie，至少含 zhihu）
+                        # 过滤出 zhihu 相关，失败则全量回写
+                        zhihu_cookies = [
+                            c for c in all_cookies if "zhihu" in (c.get("domain") or "")
+                        ]
+                        to_write = zhihu_cookies if zhihu_cookies else all_cookies
+                        if to_write:
+                            Path(cookie_file).write_text(
+                                _playwright_cookies_to_netscape(
+                                    to_write,  # type: ignore[arg-type]
+                                    fallback_domain,
+                                )
+                            )
+                        break
+                    await asyncio.sleep(1)
+
+                if not found:
+                    logger.warning("刷新知乎 Cookie 超时：未生成 __zse_ck")
+                    return False
+                return True
+            finally:
+                await browser.close()
+    except Exception as e:
+        logger.warning("刷新知乎 Cookie 异常: %s", e)
+        return False
 
 
 # =============================================================================
@@ -314,10 +495,11 @@ def _guess_extension_url(url: str) -> str | None:
     return None
 
 
-async def _fetch_answer_page(
-    url: str, cookie_file: str | None = None
-) -> str:
+async def _fetch_answer_page(url: str, cookie_file: str | None = None) -> str:
     """Fetch Zhihu answer page HTML.
+
+    403 时若已配置 cookie，会尝试用 Playwright 自动刷新 ``__zse_ck``
+    并重试一次（仅一次），仍失败再抛 ``ZhihuAccessError``。
 
     Raises:
         ZhihuAccessError: WAF 返回 403 时抛出，消息区分未配置与已失效两种场景。
@@ -328,18 +510,44 @@ async def _fetch_answer_page(
         timeout=30,
         follow_redirects=True,
         cookies=httpx_cookies or None,
-        headers={
-            "User-Agent": _USER_AGENT,
-            "Referer": _ZHIHU_REFERER,
-        },
+        headers=dict(_ZHIHU_HEADERS),
     ) as client:
         resp = await client.get(url)
+        if resp.status_code == 403 and cookie_file:
+            # 按需自动刷新（最多一次），失败不影响原有错误语义
+            try:
+                refreshed = await refresh_zhihu_cookie(cookie_file)
+            except Exception as e:
+                logger.warning("自动刷新知乎 Cookie 异常: %s", e)
+                refreshed = False
+            if refreshed:
+                httpx_cookies = _parse_cookies(cookie_file)
+                async with httpx.AsyncClient(
+                    timeout=30,
+                    follow_redirects=True,
+                    cookies=httpx_cookies or None,
+                    headers=dict(_ZHIHU_HEADERS),
+                ) as retry_client:
+                    retry_resp = await retry_client.get(url)
+                    if retry_resp.status_code != 403:
+                        if retry_resp.status_code == 200:
+                            _persist_cookie_updates(
+                                retry_client,
+                                cookie_file,
+                                _fallback_domain(url),
+                            )
+                        retry_resp.raise_for_status()
+                        return retry_resp.text
+                    # 刷新后仍 403
+                    raise ZhihuAccessError(
+                        "知乎页面访问失败（403）：Cookie 已失效，自动刷新后仍无效，"
+                        "请重新从浏览器导出并在 Cookie 设置中更新"
+                    )
+            # 未刷新或刷新失败
+            raise ZhihuAccessError(
+                "知乎页面访问失败（403）：Cookie 已失效，请重新从浏览器导出并在 Cookie 设置中更新"
+            )
         if resp.status_code == 403:
-            if cookie_file:
-                raise ZhihuAccessError(
-                    "知乎页面访问失败（403）：Cookie 已失效，"
-                    "请重新从浏览器导出并在 Cookie 设置中更新"
-                )
             raise ZhihuAccessError(
                 "知乎页面访问失败（403）：未配置知乎 Cookie，请先在 Cookie 设置中配置"
             )
@@ -353,6 +561,8 @@ async def verify_cookie(cookie_file: str | None) -> bool:
 
     请求知乎首页，能通过 WAF（返回 200）即视为有效；403 / 网络异常 /
     未传 cookie 文件 / 文件无可解析 cookie 时返回 False。
+
+    注意：验证路径不自动刷新，需用户在设置页手动点击“刷新”。
     """
     if not cookie_file:
         return False
@@ -364,10 +574,7 @@ async def verify_cookie(cookie_file: str | None) -> bool:
             timeout=30,
             follow_redirects=True,
             cookies=httpx_cookies,
-            headers={
-                "User-Agent": _USER_AGENT,
-                "Referer": _ZHIHU_REFERER,
-            },
+            headers=dict(_ZHIHU_HEADERS),
         ) as client:
             resp = await client.get("https://www.zhihu.com/")
             if resp.status_code == 200:
@@ -380,13 +587,21 @@ async def verify_cookie(cookie_file: str | None) -> bool:
 
 
 def _extract_title(html: str, url: str) -> str:
+    # og:title 可能带额外属性（如 data-rh），需兼容任意属性顺序
     m = re.search(
-        r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']',
+        r'<meta[^>]*property=["\']og:title["\'][^>]*content=["\']([^"\']+)["\']',
         html,
     )
     if m:
         return m.group(1)
-    m = re.search(r"<title>([^<]+)</title>", html)
+    # 备选：content 在前，property 在后
+    m = re.search(
+        r'<meta[^>]*content=["\']([^"\']+)["\'][^>]*property=["\']og:title["\']',
+        html,
+    )
+    if m:
+        return m.group(1)
+    m = re.search(r"<title[^>]*>([^<]+)</title>", html)
     if m:
         title = m.group(1).strip()
         return re.sub(r"\s*-\s*知乎\s*$", "", title)
@@ -402,9 +617,7 @@ def _extract_title(html: str, url: str) -> str:
     return "知乎内容"
 
 
-async def extract_zhihu_answer(
-    url: str, cookie_file: str | None = None
-) -> dict:
+async def extract_zhihu_answer(url: str, cookie_file: str | None = None) -> dict:
     """Extract original-quality image URLs and title from a Zhihu answer.
 
     Returns dict with keys:
@@ -491,10 +704,7 @@ async def download_zhihu_images(
         timeout=60,
         follow_redirects=True,
         cookies=httpx_cookies or None,
-        headers={
-            "User-Agent": _USER_AGENT,
-            "Referer": _ZHIHU_REFERER,
-        },
+        headers=dict(_ZHIHU_HEADERS),
     ) as client:
         for i, img_url in enumerate(image_urls):
             if cancel_event and cancel_event.is_set():
@@ -506,9 +716,7 @@ async def download_zhihu_images(
             filepath = output_dir / filename
 
             try:
-                await _download_media(
-                    img_url, filepath, "image", client, cancel_event
-                )
+                await _download_media(img_url, filepath, "image", client, cancel_event)
                 downloaded += 1
 
                 percent = (downloaded / total) * 100
@@ -523,9 +731,7 @@ async def download_zhihu_images(
                     else f"{int(eta_sec // 60)}:{int(eta_sec % 60):02d}"
                 )
 
-                logger.info(
-                    "Downloaded image %d/%d: %s", downloaded, total, filename
-                )
+                logger.info("Downloaded image %d/%d: %s", downloaded, total, filename)
 
                 if progress_callback:
                     try:
@@ -538,19 +744,13 @@ async def download_zhihu_images(
             except DownloadCancelledError:
                 raise
             except Exception as e:
-                logger.warning(
-                    "Failed to download image %d: %s", img_count, e
-                )
+                logger.warning("Failed to download image %d: %s", img_count, e)
 
     if downloaded == 0:
         raise ValueError("所有图片下载失败")
 
     meta_path = output_dir / "info.txt"
-    meta_path.write_text(
-        f"Title: {title}\n"
-        f"URL: {url}\n"
-        f"Downloaded: {downloaded}/{total}\n"
-    )
+    meta_path.write_text(f"Title: {title}\nURL: {url}\nDownloaded: {downloaded}/{total}\n")
 
     if download_id is not None:
         update_download_status(

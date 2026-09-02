@@ -1,4 +1,5 @@
 """Tests for core.browser_extractor."""
+
 import pytest
 
 from core.browser_extractor import _parse_netscape_cookies, is_douyin_note_url
@@ -63,8 +64,7 @@ class TestParseNetscapeCookies:
     def test_skips_malformed_lines(self, tmp_path):
         cookie_file = tmp_path / "cookies.txt"
         cookie_file.write_text(
-            ".douyin.com\tTRUE\t/\tTRUE\t0\tonly_name\n"
-            ".douyin.com\tTRUE\t/\tTRUE\t0\t\t\t\t\n"
+            ".douyin.com\tTRUE\t/\tTRUE\t0\tonly_name\n.douyin.com\tTRUE\t/\tTRUE\t0\t\t\t\t\n"
         )
         result = _parse_netscape_cookies(str(cookie_file))
         assert len(result) == 0

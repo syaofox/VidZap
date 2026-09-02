@@ -17,6 +17,7 @@
     浏览器预览无法伪造豆瓣 Referer，一律走应用内代理 /douban-image?url=...
     （main.py，服务端带 Referer 代抓）。
 """
+
 import asyncio
 import logging
 import re
@@ -42,9 +43,7 @@ DOUBAN_PHOTO_LIST_PATTERN = re.compile(
 )
 
 # 人物主页（不含 /photos 或 /photo/{id} 等子路径；query 可选）
-DOUBAN_PERSONAGE_PATTERN = re.compile(
-    r"https?://(?:www\.)?douban\.com/personage/(\d+)/?(?:\?.*)?$"
-)
+DOUBAN_PERSONAGE_PATTERN = re.compile(r"https?://(?:www\.)?douban\.com/personage/(\d+)/?(?:\?.*)?$")
 
 # 每页照片数（豆瓣固定 30）
 _PAGE_SIZE = 30
@@ -81,9 +80,7 @@ _LI_ITEM_PATTERN = re.compile(
 _TOTAL_COUNT_PATTERN = re.compile(r"\(共(\d+)张\)")
 
 # 单页"查看大图"链接（xl 原图，带签名参数）
-_PHOTO_ZOOM_PATTERN = re.compile(
-    r'<a class="photo-zoom"[^>]*href="([^"]+)"'
-)
+_PHOTO_ZOOM_PATTERN = re.compile(r'<a class="photo-zoom"[^>]*href="([^"]+)"')
 
 
 class DoubanAccessError(Exception):
@@ -92,10 +89,7 @@ class DoubanAccessError(Exception):
 
 def is_douban_photo_url(url: str) -> bool:
     """Check if URL is a Douban personage photo list page or personage home page."""
-    return bool(
-        DOUBAN_PHOTO_LIST_PATTERN.match(url)
-        or DOUBAN_PERSONAGE_PATTERN.match(url)
-    )
+    return bool(DOUBAN_PHOTO_LIST_PATTERN.match(url) or DOUBAN_PERSONAGE_PATTERN.match(url))
 
 
 def _extract_person_id(url: str) -> str | None:
@@ -148,19 +142,14 @@ async def _fetch_page(url: str, cookie_file: str | None = None) -> str:
         resp_url = str(resp.url)
         # 反爬风控页（机器人检测，HTTP 200 但跳转 /misc/sorry 或含腾讯云验证码）
         if _SORRY_MARKER in resp_url or _CAPTCHA_MARKER in resp.text[:2000]:
-            raise DoubanAccessError(
-                "豆瓣触发反爬风控（机器人检测）：请稍后再试，或降低下载频率"
-            )
+            raise DoubanAccessError("豆瓣触发反爬风控（机器人检测）：请稍后再试，或降低下载频率")
         redirected_to_sec = _SEC_DOMAIN in resp_url
         if resp.status_code in (403, 418) or redirected_to_sec:
             if cookie_file:
                 raise DoubanAccessError(
-                    "豆瓣页面访问失败：Cookie 已失效，"
-                    "请重新从浏览器导出并在 Cookie 设置中更新"
+                    "豆瓣页面访问失败：Cookie 已失效，请重新从浏览器导出并在 Cookie 设置中更新"
                 )
-            raise DoubanAccessError(
-                "豆瓣页面访问失败：未配置豆瓣 Cookie，请先在 Cookie 设置中配置"
-            )
+            raise DoubanAccessError("豆瓣页面访问失败：未配置豆瓣 Cookie，请先在 Cookie 设置中配置")
         resp.raise_for_status()
         return resp.text
 
@@ -256,9 +245,7 @@ def _build_page_url(base_url: str, start: int, sortby: str) -> str:
 # =============================================================================
 
 
-async def extract_douban_photos(
-    url: str, cookie_file: str | None = None
-) -> dict:
+async def extract_douban_photos(url: str, cookie_file: str | None = None) -> dict:
     """Extract original-quality image URLs from a Douban personage photo list.
 
     Follows pagination (30 photos per page) until all photos are collected.
@@ -340,30 +327,20 @@ def subset_note_info(note_info: dict, indexes: list[int] | set[int]) -> dict:
     image_count 同步为选中数量；越界索引安全忽略。
     """
     idx_set = set(indexes)
-    image_urls = [
-        u for i, u in enumerate(note_info["image_urls"]) if i in idx_set
-    ]
+    image_urls = [u for i, u in enumerate(note_info["image_urls"]) if i in idx_set]
     return {
         "title": note_info["title"],
         "thumbnail": note_info.get("thumbnail", ""),
         "image_urls": image_urls,
         "detail_urls": [
-            u
-            for i, u in enumerate(note_info.get("detail_urls") or [])
-            if i in idx_set
+            u for i, u in enumerate(note_info.get("detail_urls") or []) if i in idx_set
         ],
-        "thumb_urls": [
-            u
-            for i, u in enumerate(note_info.get("thumb_urls") or [])
-            if i in idx_set
-        ],
+        "thumb_urls": [u for i, u in enumerate(note_info.get("thumb_urls") or []) if i in idx_set],
         "image_count": len(image_urls),
     }
 
 
-async def _resolve_original_from_detail(
-    detail_url: str, cookie_file: str | None
-) -> str | None:
+async def _resolve_original_from_detail(detail_url: str, cookie_file: str | None) -> str | None:
     """Fetch a photo detail page and parse the '查看大图' (photo-zoom) link.
 
     Used as a fallback when the transformed xl URL fails to download.
@@ -470,20 +447,14 @@ async def download_douban_images(
 
             try:
                 try:
-                    await _download_media(
-                        img_url, filepath, "image", client, cancel_event
-                    )
+                    await _download_media(img_url, filepath, "image", client, cancel_event)
                 except httpx.HTTPStatusError:
                     # 兜底：xl 变换失败时，走单页"查看大图"链接
                     if detail_url:
-                        fallback = await _resolve_original_from_detail(
-                            detail_url, cookie_file
-                        )
+                        fallback = await _resolve_original_from_detail(detail_url, cookie_file)
                         if fallback and fallback != img_url:
                             filepath.unlink(missing_ok=True)
-                            await _download_media(
-                                fallback, filepath, "image", client, cancel_event
-                            )
+                            await _download_media(fallback, filepath, "image", client, cancel_event)
                         else:
                             raise
                     else:
@@ -506,9 +477,7 @@ async def download_douban_images(
                     else f"{int(eta_sec // 60)}:{int(eta_sec % 60):02d}"
                 )
 
-                logger.info(
-                    "Downloaded image %d/%d: %s", downloaded, total, filename
-                )
+                logger.info("Downloaded image %d/%d: %s", downloaded, total, filename)
 
                 if progress_callback:
                     try:
@@ -521,9 +490,7 @@ async def download_douban_images(
             except DownloadCancelledError:
                 raise
             except Exception as e:
-                logger.warning(
-                    "Failed to download image %d: %s", img_count, e
-                )
+                logger.warning("Failed to download image %d: %s", img_count, e)
 
             # 节流：高频连续请求易触发豆瓣反爬风控
             await asyncio.sleep(_REQUEST_DELAY)
@@ -532,11 +499,7 @@ async def download_douban_images(
         raise ValueError("所有图片下载失败")
 
     meta_path = output_dir / "info.txt"
-    meta_path.write_text(
-        f"Title: {title}\n"
-        f"URL: {url}\n"
-        f"Downloaded: {downloaded}/{total}\n"
-    )
+    meta_path.write_text(f"Title: {title}\nURL: {url}\nDownloaded: {downloaded}/{total}\n")
 
     if download_id is not None:
         update_download_status(

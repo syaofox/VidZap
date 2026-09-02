@@ -188,9 +188,7 @@ def _render_list_card(rec: dict, dynamic_refs: dict) -> None:
             if thumb:
                 # 豆瓣图走应用内代理（CDN 只接受豆瓣来源 Referer），其余站点直连
                 thumb_src = (
-                    f"/douban-image?url={quote(thumb)}"
-                    if "doubanio.com" in thumb
-                    else thumb
+                    f"/douban-image?url={quote(thumb)}" if "doubanio.com" in thumb else thumb
                 )
                 ui.image(thumb_src).classes("w-32 h-20 object-cover rounded")
 
@@ -207,9 +205,7 @@ def _render_list_card(rec: dict, dynamic_refs: dict) -> None:
                         ("https://www.zhihu.com", "http://www.zhihu.com")
                     ):
                         ui.label("类型: 知乎图片").classes("text-caption text-grey")
-                    elif rec.get("format_id") == "images" and is_douban_photo_url(
-                        rec["url"]
-                    ):
+                    elif rec.get("format_id") == "images" and is_douban_photo_url(rec["url"]):
                         ui.label("类型: 豆瓣图片").classes("text-caption text-grey")
                     elif rec.get("format_id") == "images":
                         ui.label("类型: 图片").classes("text-caption text-grey")
@@ -263,11 +259,7 @@ def _render_grid_card(rec: dict, dynamic_refs: dict) -> None:
         thumb = rec.get("thumbnail")
         if thumb:
             # 豆瓣图走应用内代理（CDN 只接受豆瓣来源 Referer），其余站点直连
-            thumb_src = (
-                f"/douban-image?url={quote(thumb)}"
-                if "doubanio.com" in thumb
-                else thumb
-            )
+            thumb_src = f"/douban-image?url={quote(thumb)}" if "doubanio.com" in thumb else thumb
             ui.image(thumb_src).classes("w-full h-40 object-cover")
         else:
             ui.label("").classes("w-full h-40 bg-grey-3")

@@ -1,4 +1,5 @@
 """Tests for core.download_queue."""
+
 import asyncio
 
 import pytest
@@ -133,9 +134,7 @@ class TestWorkerErrorHandling:
         async def mock_start(*args, **kwargs):
             raise DownloadCancelledError("cancelled")
 
-        monkeypatch.setattr(
-            core.ytdlp_handler, "start_download", mock_start
-        )
+        monkeypatch.setattr(core.ytdlp_handler, "start_download", mock_start)
 
         q = DownloadQueue()
         await q.enqueue(
@@ -157,9 +156,7 @@ class TestWorkerErrorHandling:
         async def mock_start(*args, **kwargs):
             raise RuntimeError("network error")
 
-        monkeypatch.setattr(
-            core.ytdlp_handler, "start_download", mock_start
-        )
+        monkeypatch.setattr(core.ytdlp_handler, "start_download", mock_start)
 
         q = DownloadQueue()
         await q.enqueue(

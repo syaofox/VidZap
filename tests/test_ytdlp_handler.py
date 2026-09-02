@@ -557,9 +557,7 @@ class TestOptsDefaults:
             captured_url = url
             raise ValueError("mock stop")
 
-        monkeypatch.setattr(
-            "core.ytdlp_handler._download_sync", mock_download_sync
-        )
+        monkeypatch.setattr("core.ytdlp_handler._download_sync", mock_download_sync)
 
         jingxuan_url = "https://www.douyin.com/jingxuan?modal_id=7635097254491251362"
         with pytest.raises(ValueError, match="mock stop"):
@@ -663,16 +661,26 @@ class TestGetSuggestedFormats:
         monkeypatch.setattr("core.ytdlp_handler.check_ffmpeg", lambda: True)
         formats = [
             self._make_format(
-                "vid-1080", resolution="1920x1080",
-                vcodec="avc1", acodec="none", filesize=200,
+                "vid-1080",
+                resolution="1920x1080",
+                vcodec="avc1",
+                acodec="none",
+                filesize=200,
             ),
             self._make_format(
-                "vid-720", resolution="1280x720",
-                vcodec="avc1", acodec="none", filesize=100,
+                "vid-720",
+                resolution="1280x720",
+                vcodec="avc1",
+                acodec="none",
+                filesize=100,
             ),
             self._make_format(
-                "aud-best", resolution="0x0", ext="m4a",
-                vcodec="none", acodec="mp4a", filesize=50,
+                "aud-best",
+                resolution="0x0",
+                ext="m4a",
+                vcodec="none",
+                acodec="mp4a",
+                filesize=50,
             ),
         ]
         result = get_suggested_formats(formats)

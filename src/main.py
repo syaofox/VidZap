@@ -131,8 +131,7 @@ async def _do_share(url: str, format_id: str | None = None) -> dict:
     # 豆瓣安全校验页链接（浏览器未登录/被风控重定向后地址栏的 URL）无法直接下载
     if "sec.douban.com" in url:
         raise ValueError(
-            "检测到豆瓣安全校验页链接（sec.douban.com）："
-            "请复制人物主页或照片列表页链接"
+            "检测到豆瓣安全校验页链接（sec.douban.com）：请复制人物主页或照片列表页链接"
         )
 
     url_type = classify_urls([url])
@@ -339,19 +338,24 @@ async def share_url(request: Request) -> JSONResponse:
 
 @ui.page("/")
 def index() -> None:
-    ui.query('.nicegui-content').style('max-width: 1200px; margin: 0 auto;')
+    ui.query(".nicegui-content").style("max-width: 1200px; margin: 0 auto;")
     home.render()
 
 
 @ui.page("/settings")
-def settings_page(edit: str = "", delete: str = "", test: str = "") -> None:
-    ui.query('.nicegui-content').style('max-width: 1200px; margin: 0 auto;')
-    settings.render(edit_domain=edit, delete_domain=delete, test_domain=test)
+def settings_page(edit: str = "", delete: str = "", test: str = "", refresh: str = "") -> None:
+    ui.query(".nicegui-content").style("max-width: 1200px; margin: 0 auto;")
+    settings.render(
+        edit_domain=edit,
+        delete_domain=delete,
+        test_domain=test,
+        refresh_domain=refresh,
+    )
 
 
 @ui.page("/history")
 def history_page() -> None:
-    ui.query('.nicegui-content').style('max-width: 1200px; margin: 0 auto;')
+    ui.query(".nicegui-content").style("max-width: 1200px; margin: 0 auto;")
     history.render()
 
 
@@ -363,7 +367,7 @@ if __name__ in {"__main__", "__mp_main__"}:
     _host = os.environ.get("NICEVID_HOST", "0.0.0.0")
     _port = int(os.environ.get("NICEVID_PORT", "8080"))
 
-    _icon_path = Path(__file__).parent / 'static' / 'favicon.png'
+    _icon_path = Path(__file__).parent / "static" / "favicon.png"
 
     ui.run(
         host=_host,

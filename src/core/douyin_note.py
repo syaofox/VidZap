@@ -3,6 +3,7 @@
 This module re-exports from browser_extractor and adds the download orchestration.
 The NoteExtractor ABC and implementations live in browser_extractor.py.
 """
+
 import asyncio
 import logging
 import re
@@ -153,9 +154,7 @@ async def download_note_images(
             filepath = output_dir / filename
 
             try:
-                await _download_media(
-                    media_url, filepath, media_type, client, cancel_event
-                )
+                await _download_media(media_url, filepath, media_type, client, cancel_event)
                 downloaded += 1
 
                 percent = (downloaded / total) * 100
@@ -170,9 +169,7 @@ async def download_note_images(
                     else f"{int(eta_sec // 60)}:{int(eta_sec % 60):02d}"
                 )
 
-                logger.info(
-                    "Downloaded %s %d/%d: %s", media_type, downloaded, total, filename
-                )
+                logger.info("Downloaded %s %d/%d: %s", media_type, downloaded, total, filename)
 
                 if progress_callback:
                     try:

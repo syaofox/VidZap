@@ -1,4 +1,5 @@
 """Tests for core.db."""
+
 from core.db import _db_path, get_connection, init_db
 
 

@@ -1,4 +1,5 @@
 """Tests for pages.home helper functions."""
+
 import pytest
 
 from core.db import init_db
@@ -37,6 +38,7 @@ class TestApplySelectionAction:
     @staticmethod
     def _apply(state, anchor, idx, shift):
         from pages.home import _apply_selection_action
+
         return _apply_selection_action(state, anchor, idx, shift)
 
     def test_toggle_single(self):
@@ -98,28 +100,36 @@ class TestExtractUrls:
             (
                 "夏雨为什么不选高圆圆？反而回去找袁泉？ - 林大路的回答 - 知乎\n"
                 "https://www.zhihu.com/question/349262581/answer/1944275098866541196",
-                [
-                    "https://www.zhihu.com/question/349262581/answer/1944275098866541196"
-                ],
+                ["https://www.zhihu.com/question/349262581/answer/1944275098866541196"],
             ),
             # 说明文字在前，URL 在中
-            ("看这个回答：https://www.zhihu.com/question/1/answer/2 太精彩了",
-             ["https://www.zhihu.com/question/1/answer/2"]),
+            (
+                "看这个回答：https://www.zhihu.com/question/1/answer/2 太精彩了",
+                ["https://www.zhihu.com/question/1/answer/2"],
+            ),
             # 尾随中文标点
-            ("链接：https://www.zhihu.com/question/1/answer/2。",
-             ["https://www.zhihu.com/question/1/answer/2"]),
-            ("https://www.zhihu.com/question/1/answer/2，",
-             ["https://www.zhihu.com/question/1/answer/2"]),
+            (
+                "链接：https://www.zhihu.com/question/1/answer/2。",
+                ["https://www.zhihu.com/question/1/answer/2"],
+            ),
+            (
+                "https://www.zhihu.com/question/1/answer/2，",
+                ["https://www.zhihu.com/question/1/answer/2"],
+            ),
             # 多个 URL 保序 + 去重
-            ("https://a.com/v1 和 https://b.com/v2 和 https://a.com/v1",
-             ["https://a.com/v1", "https://b.com/v2"]),
+            (
+                "https://a.com/v1 和 https://b.com/v2 和 https://a.com/v1",
+                ["https://a.com/v1", "https://b.com/v2"],
+            ),
             # 批量模式：每行带说明
-            ("第一行说明\nhttps://www.douban.com/personage/1/photos/\n"
-             "第二行说明\nhttps://www.douban.com/personage/2/photos/",
-             [
-                 "https://www.douban.com/personage/1/photos/",
-                 "https://www.douban.com/personage/2/photos/",
-             ]),
+            (
+                "第一行说明\nhttps://www.douban.com/personage/1/photos/\n"
+                "第二行说明\nhttps://www.douban.com/personage/2/photos/",
+                [
+                    "https://www.douban.com/personage/1/photos/",
+                    "https://www.douban.com/personage/2/photos/",
+                ],
+            ),
             # 无 URL / 空输入
             ("没有任何链接", []),
             ("", []),
@@ -134,7 +144,7 @@ class TestExtractUrls:
         assert extract_urls("https://x.com/p?a=1") == ["https://x.com/p?a=1"]
 
     def test_extract_then_classify(self):
-        """"标题 + URL"文本提取后应能正确分类为知乎图片。"""
+        """ "标题 + URL"文本提取后应能正确分类为知乎图片。"""
         text = "夏雨为什么不选高圆圆？ - 林大路的回答 - 知乎\nhttps://www.zhihu.com/question/349262581/answer/1944275098866541196"
         assert classify_urls(extract_urls(text)) == "zhihu_answer"
 
@@ -143,15 +153,13 @@ class TestExtractUrls:
         [
             # YouTube
             (
-                "【4K 风景】绝美延时摄影 - YouTube\n"
-                "https://www.youtube.com/watch?v=abc123DEF",
+                "【4K 风景】绝美延时摄影 - YouTube\nhttps://www.youtube.com/watch?v=abc123DEF",
                 "https://www.youtube.com/watch?v=abc123DEF",
                 "video",
             ),
             # Bilibili
             (
-                "【风】测试视频_哔哩哔哩_bilibili "
-                "https://www.bilibili.com/video/BV1xx411c7mD",
+                "【风】测试视频_哔哩哔哩_bilibili https://www.bilibili.com/video/BV1xx411c7mD",
                 "https://www.bilibili.com/video/BV1xx411c7mD",
                 "video",
             ),
@@ -211,10 +219,7 @@ class TestClassifyUrls:
                 "zhihu_answer",
             ),
             (
-                [
-                    "https://zhuanlan.zhihu.com/p/2068622649132054152?"
-                    "share_code=M0kiYWKW280p"
-                ],
+                ["https://zhuanlan.zhihu.com/p/2068622649132054152?share_code=M0kiYWKW280p"],
                 "zhihu_answer",
             ),
             (

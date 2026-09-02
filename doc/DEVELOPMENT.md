@@ -107,9 +107,18 @@ HTML 已发送给浏览器之后发生的异常（按钮点击、timer 回调）
   （`_cookies_to_netscape()`：跳过过期/空值，同名并存时优先保留服务端下发条目）。403 不回写（防误删）。
   可延长静态 cookie 有效期，但 `__zse_ck` 等需 JS 生成的签名仍会过期。
 - **403 必须抛 `ZhihuAccessError`**：`_fetch_answer_page` 遇 403 抛 `ZhihuAccessError`（消息区分"未配置"与
-  "已失效"两种场景），上层（home.py / main.py share API）捕获后透传提示，禁止吞成笼统的 HTTPStatusError。
-- **`verify_cookie(cookie_file)` 验证入口**：请求知乎首页，200 即有效。设置页保存 zhihu.com Cookie 后自动
+  "已失效/自动刷新后仍失效"三种场景），上层（home.py / main.py share API）捕获后透传提示，禁止吞成笼统的 HTTPStatusError。
+- **`verify_cookie(cookie_file)` 验证入口**：请求知乎首页，200 即有效（**不自动刷新**，需设置页手动刷新）。设置页保存 zhihu.com Cookie 后自动
   验证，并支持 `/settings?test=DOMAIN` 链接手动验证。
+- **知乎 Cookie 自动刷新（延长有效期）**：`zhihu_answer.refresh_zhihu_cookie(cookie_file)` 用 Playwright
+  注入旧 cookie（`browser_extractor._parse_netscape_cookies`）→ 访问 `/hot` 触发 zse-96 JS 生成 `__zse_ck` →
+  轮询 `context.cookies()` 至出现 `__zse_ck`（最长 20s，参考 zhihu-fisher / RSSHub）→
+  `_playwright_cookies_to_netscape()` 回写；`_fetch_answer_page()` 403 时自动刷新重试 **一次**（仍 403 抛
+  “自动刷新后仍无效”），`verify_cookie` 不自动刷新需手动触发；设置页 `/settings?refresh=DOMAIN`
+ （仅知乎域显示）对应 `settings._run_cookie_refresh`（`background_tasks.create` + `with container:` 显式 slot，
+  与 `_run_cookie_test` 同范式）；刷新仅在 `d_c0` 存在时执行（缺 `d_c0` 无法生成 `__zse_ck`）。
+- **浏览器拟真请求头**：知乎 `httpx` 请求统一带 `_ZHIHU_HEADERS`（含 `Accept` / `Accept-Language` /
+  `Sec-Fetch-Dest/Mode/Site` / `Upgrade-Insecure-Requests`），降低 WAF 因指纹不符而快速吊销的概率。
 - **过期状态展示**：`cookie_manager.parse_cookie_expiry()` / `_expiry_summary()` / `list_cookies_with_expiry()`
   解析 Netscape 格式 expires 列（0 或非法值视为会话级），设置页表格按行展示"已过期 / 含会话级 / 有效至"。
 - **专栏 SSR 无标题**：zhuanlan 页面 SSR 无 `<title>` / og:title，标题回退"知乎专栏 {id}"；

@@ -401,9 +401,11 @@ def render() -> None:
         ui.label("输入视频链接").classes("text-h6 mb-2")
 
         # 单个 URL 输入
-        url_input = ui.input(
-            "粘贴链接（支持直接粘贴含说明文字的内容，自动提取 URL）"
-        ).props("outlined clearable").classes("w-full mb-4")
+        url_input = (
+            ui.input("粘贴链接（支持直接粘贴含说明文字的内容，自动提取 URL）")
+            .props("outlined clearable")
+            .classes("w-full mb-4")
+        )
 
         # 批量 URL 输入
         batch_toggle = ui.switch("批量下载模式")
@@ -443,16 +445,8 @@ def render() -> None:
         for url in urls:
             cookie = get_cookie_for_url(url)
             note_info_for_url = urls_info.get(url)
-            title = (
-                note_info_for_url.get("title", "Unknown")
-                if note_info_for_url
-                else "Unknown"
-            )
-            thumb = (
-                note_info_for_url.get("thumbnail", "")
-                if note_info_for_url
-                else ""
-            )
+            title = note_info_for_url.get("title", "Unknown") if note_info_for_url else "Unknown"
+            thumb = note_info_for_url.get("thumbnail", "") if note_info_for_url else ""
             dl_id = create_download_record(
                 url=url,
                 title=title,
@@ -676,9 +670,7 @@ def render() -> None:
                 except ZhihuAccessError as e:
                     raise ValueError(str(e)) from None
                 except httpx.HTTPStatusError:
-                    raise ValueError(
-                        "知乎页面访问失败（非 403 错误），请稍后重试"
-                    ) from None
+                    raise ValueError("知乎页面访问失败（非 403 错误），请稍后重试") from None
                 analysis_result["info"] = zhihu_image_info
                 analysis_result["is_note"] = False
                 analysis_result["urls_info"] = {
@@ -698,14 +690,12 @@ def render() -> None:
                         if thumb:
                             ui.image(thumb).classes("w-48 rounded")
                         with ui.column().classes("flex-1"):
-                            disp_title = str(
-                                zhihu_image_info.get("title", "知乎回答")
-                            )
+                            disp_title = str(zhihu_image_info.get("title", "知乎回答"))
                             ui.label(disp_title).classes("text-h6")
                             if has_images:
-                                ui.label(
-                                    f"{zhihu_image_info['image_count']} 张图片"
-                                ).classes("text-body1 text-grey")
+                                ui.label(f"{zhihu_image_info['image_count']} 张图片").classes(
+                                    "text-body1 text-grey"
+                                )
 
                 # 图片预览和下载
                 format_card.classes(remove="hidden")
@@ -769,13 +759,11 @@ def render() -> None:
                                     def _make_zhihu_click(i=idx):
                                         def handler(e) -> None:
                                             shift, _ctrl = _read_event_modifiers(e)
-                                            new_state, new_anchor = (
-                                                _apply_selection_action(
-                                                    zhihu_selected,
-                                                    zhihu_anchor["idx"],
-                                                    i,
-                                                    shift,
-                                                )
+                                            new_state, new_anchor = _apply_selection_action(
+                                                zhihu_selected,
+                                                zhihu_anchor["idx"],
+                                                i,
+                                                shift,
                                             )
                                             zhihu_selected[:] = new_state
                                             zhihu_anchor["idx"] = new_anchor
@@ -792,9 +780,7 @@ def render() -> None:
                                     )
                                     img.on("dblclick", _open_img)
 
-                                    cb = ui.checkbox(f"{idx + 1}").props(
-                                        "dense size=sm"
-                                    )
+                                    cb = ui.checkbox(f"{idx + 1}").props("dense size=sm")
                                     cb.value = zhihu_selected[idx]  # 展示状态
                                     zhihu_checkboxes.append(cb)
 
@@ -811,28 +797,24 @@ def render() -> None:
                         zhihu_page_ref["page"] = (
                             zhihu_page_ref["page"] + delta
                         ) % zhihu_total_pages
-                        zhihu_page_label.text = (
-                            f"{zhihu_page_ref['page'] + 1}/{zhihu_total_pages}"
-                        )
+                        zhihu_page_label.text = f"{zhihu_page_ref['page'] + 1}/{zhihu_total_pages}"
                         render_zhihu_page.refresh()
                         _bind_zhihu_cbs()
 
                     with ui.row().classes("w-full items-center justify-center gap-2"):
-                        ui.button(
-                            "上一页", on_click=lambda: _change_zhihu_page(-1)
-                        ).props("dense flat")
+                        ui.button("上一页", on_click=lambda: _change_zhihu_page(-1)).props(
+                            "dense flat"
+                        )
                         zhihu_page_label = ui.label(f"1/{zhihu_total_pages}")
-                        ui.button(
-                            "下一页", on_click=lambda: _change_zhihu_page(1)
-                        ).props("dense flat")
+                        ui.button("下一页", on_click=lambda: _change_zhihu_page(1)).props(
+                            "dense flat"
+                        )
 
                     with ui.row().classes("w-full justify-end mt-4"):
                         zh_dl_btn_ref: dict = {"btn": None}
 
                         async def do_zhihu_download() -> None:
-                            selected_indexes = [
-                                i for i, v in enumerate(zhihu_selected) if v
-                            ]
+                            selected_indexes = [i for i, v in enumerate(zhihu_selected) if v]
                             if not selected_indexes:
                                 ui.notify("请至少选择一张图片", type="warning")
                                 return
@@ -843,37 +825,24 @@ def render() -> None:
                             urls_to_download = urls
                             if existing:
                                 existing_titles = [
-                                    r.get("title") or r["url"][:60]
-                                    for r in existing
+                                    r.get("title") or r["url"][:60] for r in existing
                                 ]
                                 with ui.dialog() as dialog, ui.card():
-                                    ui.label(
-                                        "部分链接已存在于下载记录中"
-                                    ).classes("text-h6")
+                                    ui.label("部分链接已存在于下载记录中").classes("text-h6")
                                     for t in existing_titles:
-                                        ui.label(f"  · {t}").classes(
-                                            "text-body2"
-                                        )
-                                    with ui.row().classes(
-                                        "w-full justify-end mt-4 gap-2"
-                                    ):
+                                        ui.label(f"  · {t}").classes("text-body2")
+                                    with ui.row().classes("w-full justify-end mt-4 gap-2"):
                                         ui.button(
                                             "取消",
-                                            on_click=lambda: dialog.submit(
-                                                "cancel"
-                                            ),
+                                            on_click=lambda: dialog.submit("cancel"),
                                         ).props("flat")
                                         ui.button(
                                             "跳过已存在的",
-                                            on_click=lambda: dialog.submit(
-                                                "skip"
-                                            ),
+                                            on_click=lambda: dialog.submit("skip"),
                                         ).props("color=primary")
                                         ui.button(
                                             "覆盖重新下载",
-                                            on_click=lambda: dialog.submit(
-                                                "overwrite"
-                                            ),
+                                            on_click=lambda: dialog.submit("overwrite"),
                                         ).props("color=negative")
                                 choice = await dialog
                                 if choice == "cancel":
@@ -918,9 +887,7 @@ def render() -> None:
                 except DoubanAccessError as e:
                     raise ValueError(str(e)) from None
                 except httpx.HTTPStatusError:
-                    raise ValueError(
-                        "豆瓣页面访问失败（非 403 错误），请稍后重试"
-                    ) from None
+                    raise ValueError("豆瓣页面访问失败（非 403 错误），请稍后重试") from None
                 analysis_result["info"] = douban_image_info
                 analysis_result["is_note"] = False
                 analysis_result["urls_info"] = {
@@ -940,18 +907,14 @@ def render() -> None:
                         if thumb:
                             # 豆瓣 CDN 只接受豆瓣来源 Referer，浏览器无法伪造，
                             # 预览走应用内代理 /douban-image（服务端带 Referer 代抓）。
-                            ui.image(f"/douban-image?url={quote(thumb)}").classes(
-                                "w-48 rounded"
-                            )
+                            ui.image(f"/douban-image?url={quote(thumb)}").classes("w-48 rounded")
                         with ui.column().classes("flex-1"):
-                            disp_title = str(
-                                douban_image_info.get("title", "豆瓣人物图片")
-                            )
+                            disp_title = str(douban_image_info.get("title", "豆瓣人物图片"))
                             ui.label(disp_title).classes("text-h6")
                             if has_images:
-                                ui.label(
-                                    f"{douban_image_info['image_count']} 张图片"
-                                ).classes("text-body1 text-grey")
+                                ui.label(f"{douban_image_info['image_count']} 张图片").classes(
+                                    "text-body1 text-grey"
+                                )
 
                 # 图片预览和下载
                 format_card.classes(remove="hidden")
@@ -963,8 +926,7 @@ def render() -> None:
                     ).classes("text-caption text-grey mb-2")
 
                     preview_urls = (
-                        douban_image_info.get("thumb_urls")
-                        or douban_image_info["image_urls"]
+                        douban_image_info.get("thumb_urls") or douban_image_info["image_urls"]
                     )
                     # 双击打开豆瓣照片单页（页面内有"查看大图"按钮）。
                     # 不能直接打开 xl 原图 URL：页面全局 no-referrer 策略下
@@ -1012,9 +974,7 @@ def render() -> None:
                                 with ui.column().classes("items-center gap-0"):
                                     img = ui.image(
                                         f"/douban-image?url={quote(preview_urls[idx])}"
-                                    ).classes(
-                                        "w-32 h-32 object-cover rounded cursor-pointer"
-                                    )
+                                    ).classes("w-32 h-32 object-cover rounded cursor-pointer")
                                     if not douban_selected[idx]:
                                         img.classes(add="opacity-40")
                                     douban_imgs[idx] = img
@@ -1031,13 +991,11 @@ def render() -> None:
                                     def _make_douban_click(i=idx):
                                         def handler(e) -> None:
                                             shift, _ctrl = _read_event_modifiers(e)
-                                            new_state, new_anchor = (
-                                                _apply_selection_action(
-                                                    douban_selected,
-                                                    douban_anchor["idx"],
-                                                    i,
-                                                    shift,
-                                                )
+                                            new_state, new_anchor = _apply_selection_action(
+                                                douban_selected,
+                                                douban_anchor["idx"],
+                                                i,
+                                                shift,
                                             )
                                             douban_selected[:] = new_state
                                             douban_anchor["idx"] = new_anchor
@@ -1054,9 +1012,7 @@ def render() -> None:
                                     )
                                     img.on("dblclick", _open_douban_img)
 
-                                    cb = ui.checkbox(f"{idx + 1}").props(
-                                        "dense size=sm"
-                                    )
+                                    cb = ui.checkbox(f"{idx + 1}").props("dense size=sm")
                                     cb.value = douban_selected[idx]  # 展示状态
                                     douban_checkboxes.append(cb)
 
@@ -1080,21 +1036,19 @@ def render() -> None:
                         _bind_douban_cbs()
 
                     with ui.row().classes("w-full items-center justify-center gap-2"):
-                        ui.button(
-                            "上一页", on_click=lambda: _change_douban_page(-1)
-                        ).props("dense flat")
+                        ui.button("上一页", on_click=lambda: _change_douban_page(-1)).props(
+                            "dense flat"
+                        )
                         douban_page_label = ui.label(f"1/{douban_total_pages}")
-                        ui.button(
-                            "下一页", on_click=lambda: _change_douban_page(1)
-                        ).props("dense flat")
+                        ui.button("下一页", on_click=lambda: _change_douban_page(1)).props(
+                            "dense flat"
+                        )
 
                     with ui.row().classes("w-full justify-end mt-4"):
                         db_dl_btn_ref: dict = {"btn": None}
 
                         async def do_douban_download() -> None:
-                            selected_indexes = [
-                                i for i, v in enumerate(douban_selected) if v
-                            ]
+                            selected_indexes = [i for i, v in enumerate(douban_selected) if v]
                             if not selected_indexes:
                                 ui.notify("请至少选择一张图片", type="warning")
                                 return
@@ -1105,37 +1059,24 @@ def render() -> None:
                             urls_to_download = urls
                             if existing:
                                 existing_titles = [
-                                    r.get("title") or r["url"][:60]
-                                    for r in existing
+                                    r.get("title") or r["url"][:60] for r in existing
                                 ]
                                 with ui.dialog() as dialog, ui.card():
-                                    ui.label(
-                                        "部分链接已存在于下载记录中"
-                                    ).classes("text-h6")
+                                    ui.label("部分链接已存在于下载记录中").classes("text-h6")
                                     for t in existing_titles:
-                                        ui.label(f"  · {t}").classes(
-                                            "text-body2"
-                                        )
-                                    with ui.row().classes(
-                                        "w-full justify-end mt-4 gap-2"
-                                    ):
+                                        ui.label(f"  · {t}").classes("text-body2")
+                                    with ui.row().classes("w-full justify-end mt-4 gap-2"):
                                         ui.button(
                                             "取消",
-                                            on_click=lambda: dialog.submit(
-                                                "cancel"
-                                            ),
+                                            on_click=lambda: dialog.submit("cancel"),
                                         ).props("flat")
                                         ui.button(
                                             "跳过已存在的",
-                                            on_click=lambda: dialog.submit(
-                                                "skip"
-                                            ),
+                                            on_click=lambda: dialog.submit("skip"),
                                         ).props("color=primary")
                                         ui.button(
                                             "覆盖重新下载",
-                                            on_click=lambda: dialog.submit(
-                                                "overwrite"
-                                            ),
+                                            on_click=lambda: dialog.submit("overwrite"),
                                         ).props("color=negative")
                                 choice = await dialog
                                 if choice == "cancel":
@@ -1189,9 +1130,7 @@ def render() -> None:
                         except Exception:
                             return u, None
 
-                other_results = await asyncio.gather(
-                    *[_extract_other_info(u) for u in urls[1:]]
-                )
+                other_results = await asyncio.gather(*[_extract_other_info(u) for u in urls[1:]])
                 for u, ei in other_results:
                     if ei is not None:
                         analysis_result["urls_info"][u] = ei
@@ -1366,9 +1305,7 @@ def render() -> None:
 
                         urls_to_download = urls
                         if existing:
-                            existing_titles = [
-                                r.get("title") or r["url"][:60] for r in existing
-                            ]
+                            existing_titles = [r.get("title") or r["url"][:60] for r in existing]
                             with ui.dialog() as dialog, ui.card():
                                 ui.label("部分链接已存在于下载记录中").classes("text-h6")
                                 for t in existing_titles:
@@ -1516,24 +1453,10 @@ def render() -> None:
             note_info_for_url = urls_info.get(url)
             # 分析页勾选子集：仅对展示过的 URL（即首个 URL）裁剪 note_info；
             # 批量模式中其他 URL 无预览数据，下载全量
-            if (
-                note_info_for_url is not None
-                and selected_indexes
-                and url == urls[0]
-            ):
-                note_info_for_url = subset_note_info(
-                    note_info_for_url, selected_indexes
-                )
-            title = (
-                note_info_for_url.get("title", "Unknown")
-                if note_info_for_url
-                else "Unknown"
-            )
-            thumb = (
-                note_info_for_url.get("thumbnail", "")
-                if note_info_for_url
-                else ""
-            )
+            if note_info_for_url is not None and selected_indexes and url == urls[0]:
+                note_info_for_url = subset_note_info(note_info_for_url, selected_indexes)
+            title = note_info_for_url.get("title", "Unknown") if note_info_for_url else "Unknown"
+            thumb = note_info_for_url.get("thumbnail", "") if note_info_for_url else ""
             dl_id = create_download_record(
                 url=url,
                 title=title,
@@ -1590,24 +1513,10 @@ def render() -> None:
             note_info_for_url = urls_info.get(url)
             # 分析页勾选子集：仅对展示过的 URL（即首个 URL）裁剪 note_info；
             # 批量模式中其他 URL 无预览数据，下载全量
-            if (
-                note_info_for_url is not None
-                and selected_indexes
-                and url == urls[0]
-            ):
-                note_info_for_url = subset_note_info(
-                    note_info_for_url, selected_indexes
-                )
-            title = (
-                note_info_for_url.get("title", "Unknown")
-                if note_info_for_url
-                else "Unknown"
-            )
-            thumb = (
-                note_info_for_url.get("thumbnail", "")
-                if note_info_for_url
-                else ""
-            )
+            if note_info_for_url is not None and selected_indexes and url == urls[0]:
+                note_info_for_url = subset_note_info(note_info_for_url, selected_indexes)
+            title = note_info_for_url.get("title", "Unknown") if note_info_for_url else "Unknown"
+            thumb = note_info_for_url.get("thumbnail", "") if note_info_for_url else ""
             dl_id = create_download_record(
                 url=url,
                 title=title,

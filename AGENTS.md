@@ -62,8 +62,11 @@ uv lock                     # pyproject.toml 变动后必须执行，pyproject.t
 - `get_cookie(domain)` 返回单条记录 + `content`（文件内容，用于修改对话框预填；文件缺失时为空串）。
 - **`get_cookie_for_url(url)` 带子域后缀匹配**（精确 domain → 最长子域 → 反向父域），下载/分析流程一律用它取 cookie 文件。
 - **过期状态**：`list_cookies_with_expiry()` / `parse_cookie_expiry()` 供设置页展示；Netscape expires=0 或非法值视为会话级。
-- **zhihu.com 403 必须抛 `ZhihuAccessError`**（zhihu_answer.py，区分"未配置/已失效"消息）；`verify_cookie(cookie_file)` 请求首页验证（200=有效），设置页保存 zhihu Cookie 后自动验证 + `/settings?test=DOMAIN` 手动验证。
+- **zhihu.com 403 必须抛 `ZhihuAccessError`**（zhihu_answer.py，区分"未配置/已失效/自动刷新后仍失效"消息）；`verify_cookie(cookie_file)` 请求首页验证（200=有效，**不自动刷新**），设置页保存 zhihu Cookie 后自动验证 + `/settings?test=DOMAIN` 手动验证。
 - **zhihu 请求成功后必须 Set-Cookie 回写**：`_fetch_answer_page()` / `verify_cookie()` 2xx 后调用 `_persist_cookie_updates()`（httpx jar → Netscape 写回，`_cookies_to_netscape()`），403 不回写。
+- **知乎 Cookie 自动刷新**：`zhihu_answer.refresh_zhihu_cookie(cookie_file)` 用 Playwright 注入旧 cookie → 访问 `/hot` 触发 `__zse_ck` JS 生成 → 轮询 `context.cookies()` 至出现 `__zse_ck` → `_playwright_cookies_to_netscape()` 回写；`_fetch_answer_page()` 403 时自动刷新重试 **一次**（仍 403 抛“自动刷新后仍无效”），`verify_cookie` 不自动刷新需手动触发。
+- **浏览器拟真请求头**：知乎 `httpx` 请求必须带 `_ZHIHU_HEADERS`（含 `Accept` / `Accept-Language` / `Sec-Fetch-*` / `Upgrade-Insecure-Requests`）降低 WAF 拦截率。
+- **设置页刷新入口**：`/settings?refresh=DOMAIN`（仅 `zhihu.com` 及其子域显示刷新图标），`settings.render(edit_domain=..., delete_domain=..., test_domain=..., refresh_domain=...)` 页面加载后自动执行 `_run_cookie_refresh`（与 `_run_cookie_test` 同为 `background_tasks.create` + `with container:` 显式 slot）。
 - 修改/删除入口：`/settings?edit=DOMAIN`、`/settings?delete=DOMAIN` URL 导航，`settings.render(edit_domain=..., delete_domain=...)` 页面加载后自动弹窗。
 
 ### 数据库
