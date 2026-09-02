@@ -81,6 +81,55 @@ def check_ffmpeg() -> bool:
     return shutil.which("ffmpeg") is not None
 
 
+def _get_js_runtimes() -> dict:
+    """检测可用的 JS 运行时，供 yt-dlp 解决 YouTube n 参数等挑战。
+
+    YouTube 自 2024 年起对部分格式启用 n 参数限流，需 JS 运行时
+    解密；自 2026.01 起还需 EJS 远程组件（ejs:github）。
+    默认 yt-dlp 仅启用 deno，本机常只有 node/bun，需显式配置。
+    返回可用的运行时字典，如 {"node": {}}，无可用时返回空字典
+    （交给 yt-dlp 默认处理，会产生 warning）。
+
+    兼容 uv 隔离环境：shutil.which 可能因 PATH 受限返回 None，
+    额外检查常见安装路径。
+    """
+    runtimes: dict = {}
+    candidates: dict[str, list[str]] = {
+        "node": ["/usr/bin/node", "/usr/local/bin/node", "/opt/homebrew/bin/node"],
+        "deno": ["/usr/bin/deno", "/usr/local/bin/deno", "/root/.deno/bin/deno"],
+        "bun": ["/usr/bin/bun", "/usr/local/bin/bun", "/root/.bun/bin/bun"],
+        "quickjs": ["/usr/bin/qjs", "/usr/local/bin/qjs"],
+    }
+    for name, fallback_paths in candidates.items():
+        if shutil.which(name):
+            runtimes[name] = {}
+            continue
+        for p in fallback_paths:
+            try:
+                if Path(p).exists():
+                    runtimes[name] = {}
+                    break
+            except (OSError, PermissionError):
+                continue
+    return runtimes
+
+
+def _get_yt_dlp_base_opts() -> dict:
+    """yt-dlp 通用基础配置：JS 运行时 + EJS 远程组件。"""
+    opts: dict = {}
+    js_runtimes = _get_js_runtimes()
+    if js_runtimes:
+        opts["js_runtimes"] = js_runtimes
+        # EJS 用于解决 YouTube n 挑战，2026 年起必需
+        opts["remote_components"] = ["ejs:github"]
+    elif not js_runtimes:
+        logger.warning(
+            "未检测到 node/deno/bun/quickjs，YouTube 部分格式可能因 n 参数限流而 403，"
+            "建议在容器内安装 nodejs"
+        )
+    return opts
+
+
 def init_downloads_dir() -> None:
     """初始化下载目录"""
     DOWNLOADS_DIR.mkdir(exist_ok=True)
@@ -90,6 +139,7 @@ async def extract_info(url: str, cookie_file: str | None = None) -> dict:
     """提取视频信息"""
     url = normalize_url(url)
     opts: dict = {
+        **_get_yt_dlp_base_opts(),
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -346,6 +396,7 @@ async def start_download(
     )
 
     opts: dict = {
+        **_get_yt_dlp_base_opts(),
         "progress_hooks": [hook],
         "outtmpl": outtmpl,
         "quiet": True,

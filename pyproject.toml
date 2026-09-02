@@ -8,7 +8,7 @@ dependencies = [
     "nicegui==3.9.0",
     "fastapi",
     "uvicorn",
-    "yt-dlp>=2026.7.0",
+    "yt-dlp>=2026.8.19",
     "pydantic",
     "python-multipart",
     "playwright",

@@ -70,12 +70,13 @@ HTML 已发送给浏览器之后发生的异常（按钮点击、timer 回调）
 
 ### yt-dlp
 - **Bilibili HTTP 412**：2026.03.17 的 Bilibili extractor 存在 `HTTP 412 Precondition Failed`
-  bug，无法提取视频信息和封面。因此 `pyproject.toml` 锁定 `yt-dlp>=2026.7.0`，升级时勿降低。
+  bug，无法提取视频信息和封面。因此 `pyproject.toml` 锁定 `yt-dlp>=2026.8.19`，升级时勿降低（2026.07 尚可，2026.08 起 YouTube SABR 强制 EJS，需更高版本）。
 - **`FFmpegThumbnailsConvertor` 勿设 `when: "before_dl"`**：封面转换时机用默认 `after_dl`，
   否则可能导致转码时序问题。
 - **YouTube 字幕 429 限流**：字幕下载易触发限流，`_download_sync` 对字幕类错误自动去字幕重试；
   UI 侧自动生成字幕默认不勾选（`home.py`），手动字幕默认只勾 zh/en。
 - **YouTube cookie 反爬**：带 cookie 提取可能失败，`_extract_sync` 失败时自动移除 cookie 重试。
+- **YouTube 403 n 挑战与 EJS（踩坑结论）**：YouTube 自 2024 年起对部分格式启用 `n` 参数限流，2026 年起对 `web`/`SABR` 流强制 `EJS` 远程组件。无 JS 运行时时 `yt-dlp` 仅用 `android` 回退，但新版服务端对 `android` 亦限流，表现为 `extract` 成功但 `download` 中途 `HTTP 403 Forbidden`（如 `JlS6439hjRQ` 在 40% 处 403）。修复：① `pyproject.toml` 升级 `yt-dlp>=2026.8.19`；② `Dockerfile` 安装 `nodejs`；③ `ytdlp_handler._get_js_runtimes()` 检测 `node`/`deno`/`bun` 并注入 `js_runtimes` + `remote_components: ["ejs:github"]`（自动从 `https://github.com/yt-dlp/ejs` 拉取解密脚本，需外网）。三者缺一则回退到 `403`，日志可见 `No supported JS runtime` / `Remote component ejs:github was skipped`。
 - **批量提取串行化**：批量分析用 `asyncio.Semaphore(1)` 串行执行，避免触发 YouTube 反爬 /
   Douyin 限流。
 - **视频信息超时**：`ytdlp_handler.extract_info()` 内部统一 `asyncio.wait_for(..., timeout=60)`（分享 API 阶段分析 30s，main.py 外层 wait_for）。注意：**home.py 的 douyin/zhihu 提取没有外层 wait_for 兜底**，靠 httpx timeout=30 / Playwright page.goto 30s 内部超时，卡死时只能由用户重新点击。
